@@ -926,12 +926,12 @@ namespace Rux {
             return "link.exe";
         } else if (targetTriple.find("apple") != std::string::npos ||
                    targetTriple.find("darwin") != std::string::npos) {
-            return "ld64";
+            return "cc";
         } else {
-            return "ld";
+            return "cc";
         }
 #else
-        return "ld";
+        return "cc";
 #endif
     }
 
@@ -956,12 +956,11 @@ namespace Rux {
             cmd += " -lSystem";
             // TODO: Add -syslibroot with xcrun
         } else {
-            // Linux/BSD linker
+            // Linux/BSD - use cc as linker driver
             cmd += " -o " + outputPath.string();
             for (const auto& obj : objectFiles) {
                 cmd += " " + obj.string();
             }
-            cmd += " -dynamic-linker /lib64/ld-linux-x86-64.so.2";
             cmd += " -lc -lm";
         }
 
