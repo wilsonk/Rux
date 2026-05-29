@@ -99,7 +99,7 @@ namespace Rux {
                 return MapSliceType(TypeRef::MakeChar32());
             case TypeRef::Kind::TypeParam:
                 // Generic parameters - for now, treat as opaque
-                return llvm::Type::getInt8Ty(context)->getPointerTo();
+                return llvm::PointerType::get(context, 0);
 
             default:
                 return nullptr;
@@ -127,7 +127,7 @@ namespace Rux {
         if (type.inner.empty()) return nullptr;
         llvm::Type* pointee = MapType(type.inner[0]);
         if (!pointee) return nullptr;
-        return llvm::PointerType::get(context, 0, pointee);
+        return llvm::PointerType::get(pointee, 0);
     }
 
     llvm::Type* LLVMTypeMapper::MapSliceType(const TypeRef& type) {
@@ -137,7 +137,7 @@ namespace Rux {
 
         // Slice is { pointer, length } - 16 bytes on 64-bit
         llvm::Type* fields[] = {
-            llvm::PointerType::get(context, 0, elementType),
+            llvm::PointerType::get(elementType, 0),
             llvm::Type::getInt64Ty(context)
         };
         return llvm::StructType::create(context, fields, "slice");
@@ -206,7 +206,7 @@ namespace Rux {
                 // Let LLVM choose the default for the target
                 return llvm::CallingConv::C;
             case Rux::CallingConvention::Win64:
-                return llvm::CallingConv::X86_64_Win64;
+                return llvm::CallingConv::Win64;
             default:
                 return llvm::CallingConv::C;
         }
@@ -575,7 +575,7 @@ namespace Rux {
         llvm::Type* baseType = base->getType();
         if (!baseType->isPointerTy()) return nullptr;
 
-        llvm::StructType* structType = llvm::dyn_cast<llvm::StructType>(baseType->getNonOpaquePointerElementType());
+        llvm::StructType* structType = llvm::dyn_cast<llvm::StructType>(baseType->getPointerElementType());
         if (!structType) return nullptr;
 
         return builder->CreateStructGEP(structType, base, fieldIndex, "fieldptr");
@@ -591,7 +591,7 @@ namespace Rux {
         llvm::Type* baseType = base->getType();
         if (!baseType->isPointerTy()) return nullptr;
 
-        return builder->CreateGEP(baseType->getNonOpaquePointerElementType(), base, idx, "indexptr");
+        return builder->CreateGEP(baseType->getPointerElementType(), base, idx, "indexptr");
     }
 
     llvm::Value* LLVM::TranslatePhi(const LirInstr& instr) {
@@ -758,7 +758,7 @@ namespace Rux {
         }
 
         llvm::StructType* structType = llvm::StructType::create(*context, fieldTypes, decl.name);
-        typeMapper->MapType(TypeRef{TypeRef::Kind::Named, decl.name}); // Cache the type
+        (void)typeMapper->MapType(TypeRef{TypeRef::Kind::Named, decl.name}); // Cache the type
         return true;
     }
 
@@ -768,7 +768,7 @@ namespace Rux {
         llvm::Type* baseType = typeMapper->MapType(decl.baseType);
         if (!baseType) return false;
 
-        typeMapper->MapType(TypeRef{TypeRef::Kind::Named, decl.name}); // Cache the type
+        (void)typeMapper->MapType(TypeRef{TypeRef::Kind::Named, decl.name}); // Cache the type
         return true;
     }
 
