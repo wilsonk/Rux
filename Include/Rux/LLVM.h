@@ -104,6 +104,9 @@ namespace Rux {
         [[nodiscard]] bool SetupTargetMachine();
         [[nodiscard]] std::string DetectHostTargetTriple() const;
 
+        [[nodiscard]] bool EmitObjectFile(const std::filesystem::path& path) const;
+        [[nodiscard]] std::string GetObjectFileExtension() const;
+
         [[nodiscard]] llvm::Value* TranslateInstruction(const LirInstr& instr);
         [[nodiscard]] llvm::Value* TranslateConst(const LirInstr& instr);
         [[nodiscard]] llvm::Value* TranslateAlloca(const LirInstr& instr);

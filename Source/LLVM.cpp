@@ -19,6 +19,12 @@
 #include <llvm/Support/FileSystem.h>
 #include <llvm/Support/raw_ostream.h>
 #include <llvm/Support/Host.h>
+#include <llvm/MC/MCAsmInfo.h>
+#include <llvm/MC/MCContext.h>
+#include <llvm/MC/MCInstrInfo.h>
+#include <llvm/MC/MCRegisterInfo.h>
+#include <llvm/MC/MCSubtargetInfo.h>
+#include <llvm/Target/TargetOptions.h>
 #endif
 
 namespace Rux {
@@ -249,9 +255,26 @@ namespace Rux {
 
     std::vector<std::filesystem::path> LLVM::Generate() const {
 #ifdef USE_LLVM_BACKEND
-        // TODO: Implement LIR to LLVM IR translation
-        // TODO: Generate object files using LLVM backend
-        return {};
+        std::vector<std::filesystem::path> objectFiles;
+
+        // Translate all modules in the package
+        for (const auto& mod : lir.modules) {
+            if (!TranslateModule(mod)) {
+                // TODO: Handle error
+                return {};
+            }
+
+            // Generate object file for this module
+            std::filesystem::path objectPath = mod.name + GetObjectFileExtension();
+            if (!EmitObjectFile(objectPath)) {
+                // TODO: Handle error
+                return {};
+            }
+
+            objectFiles.push_back(objectPath);
+        }
+
+        return objectFiles;
 #else
         return {};
 #endif
@@ -261,6 +284,54 @@ namespace Rux {
 #ifdef USE_LLVM_BACKEND
         // TODO: Implement LLVM IR emission
         return false;
+#else
+        return false;
+#endif
+    }
+
+    std::string LLVM::GetObjectFileExtension() const {
+#ifdef USE_LLVM_BACKEND
+        if (targetTriple.find("windows") != std::string::npos ||
+            targetTriple.find("win32") != std::string::npos ||
+            targetTriple.find("msvc") != std::string::npos) {
+            return ".obj";
+        }
+        return ".o";
+#else
+        return ".o";
+#endif
+    }
+
+    bool LLVM::EmitObjectFile(const std::filesystem::path& path) const {
+#ifdef USE_LLVM_BACKEND
+        if (!targetMachine) {
+            return false;
+        }
+
+        // Set module data layout
+        module->setDataLayout(targetMachine->createDataLayout());
+
+        std::error_code ec;
+        llvm::raw_fd_ostream dest(path.string(), ec, llvm::sys::fs::OF_None);
+
+        if (ec) {
+            return false;
+        }
+
+        // Create pass manager
+        llvm::legacy::PassManager pass;
+
+        // Add pass to emit object file
+        if (targetMachine->addPassesToEmitFile(pass, dest, nullptr, llvm::CodeGenFileType::ObjectFile)) {
+            return false;
+        }
+
+        // Run the pass manager
+        pass.run(*module);
+
+        dest.flush();
+
+        return true;
 #else
         return false;
 #endif
