@@ -35,7 +35,6 @@
 #include <unordered_set>
 #include <vector>
 
-
 // Do NOT move these includes.
 // psapi.h depends on definitions from windows.h.
 // If reordered, MSVC will unleash an ancient curse upon this file.
@@ -150,8 +149,16 @@ namespace Rux {
             std::string os = "Windows";
 #elif defined(__APPLE__)
             std::string os = "macOS";
+#elif defined(__OpenBSD__)
+            std::string os = "OpenBSD";
 #elif defined(__linux__)
             std::string os = "Linux";
+#elif defined(__FreeBSD__)
+            std::string os = "FreeBSD";
+#elif defined(__DragonFly__)
+            std::string os = "DragonFly";
+#elif defined(__NetBSD__)
+            std::string os = "NetBSD";
 #else
             std::string os = "Unknown";
 #endif
@@ -172,7 +179,9 @@ namespace Rux {
         [[nodiscard]] std::string HostTargetTriple() {
 #if defined(_WIN32) && (defined(_M_X64) || defined(__x86_64__) || defined(__amd64__))
             return "windows-x64";
-#elif defined(__linux__) && (defined(__x86_64__) || defined(__amd64__))
+#elif (defined(__linux__) || defined(__FreeBSD__) || defined(__OpenBSD__) || defined(__NetBSD__) ||                    \
+       defined(__DragonFly__)) &&                                                                                      \
+    (defined(__x86_64__) || defined(__amd64__))
             return "linux-x64";
 #else
             return "unknown";
@@ -2273,7 +2282,7 @@ namespace Rux {
 
             const auto deps = ownerManifest.EffectiveDependencies(targetName);
             std::optional<Dependency> targetDep;
-            
+
             for (const auto& d : deps) {
                 if (d.name == pkgName) {
                     targetDep = d;
@@ -2295,7 +2304,7 @@ namespace Rux {
                 }
             } else {
                 depRoot = (ownerRoot / targetDep->path).lexically_normal();
-                
+
                 auto rel = depRoot.lexically_relative(ownerRoot);
                 if (!rel.empty() && rel.begin()->string() == "..") {
                     EmitDiag("", 0, 0, "error", "package '" + pkgName + "' contains an invalid path escaping root bounds");
@@ -2315,10 +2324,10 @@ namespace Rux {
         };
 
         std::vector<std::string> imports;
-        
+
         struct ImportCollector {
             std::vector<std::string>& imports;
-            
+
             void collect(const Decl& decl) {
                 if (const auto* ud = dynamic_cast<const UseDecl*>(&decl)) {
                     if (!ud->path.empty()) imports.push_back(ud->path[0]);
@@ -2369,7 +2378,7 @@ namespace Rux {
                         std::print(stderr, "{}", error);
                     }
                 }
-                
+
                 if (!depLoadResult->errors.empty()) {
                     hadErrors = true;
                     break;
@@ -2407,7 +2416,7 @@ namespace Rux {
 
                     packageParseResults.push_back(std::move(depParse));
                 }
-                
+
                 if (hadErrors) break;
 
                 imports.clear();
@@ -2425,7 +2434,7 @@ namespace Rux {
                         break;
                     }
                 }
-                
+
                 if (hadErrors) break;
 
                 for (auto& depParse : packageParseResults) {
