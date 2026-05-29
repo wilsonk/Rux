@@ -575,9 +575,15 @@ namespace Rux {
         llvm::Type* baseType = base->getType();
         if (!baseType->isPointerTy()) return nullptr;
 
-        // With opaque pointers, we can't get the element type directly
-        // Use CreateStructGEP which handles this internally
-        return builder->CreateStructGEP(base, fieldIndex, "fieldptr");
+        // With opaque pointers, we need to know the element type
+        // For now, use the instruction type to infer the struct type
+        llvm::Type* elementType = typeMapper->MapType(instr.type);
+        if (!elementType) return nullptr;
+
+        llvm::StructType* structType = llvm::dyn_cast<llvm::StructType>(elementType);
+        if (!structType) return nullptr;
+
+        return builder->CreateStructGEP(structType, base, fieldIndex, "fieldptr");
     }
 
     llvm::Value* LLVM::TranslateIndexPtr(const LirInstr& instr) {
