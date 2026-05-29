@@ -113,6 +113,12 @@ namespace Rux {
         [[nodiscard]] llvm::Value* TranslateIndexPtr(const LirInstr& instr);
         [[nodiscard]] llvm::Value* TranslatePhi(const LirInstr& instr);
         [[nodiscard]] llvm::Value* TranslateGlobalAddr(const LirInstr& instr);
+
+        [[nodiscard]] bool TranslateTerminator(const LirTerminator& term, const std::unordered_map<std::uint32_t, llvm::BasicBlock*>& blockMap);
+        [[nodiscard]] bool TranslateJump(const LirTerminator& term, const std::unordered_map<std::uint32_t, llvm::BasicBlock*>& blockMap);
+        [[nodiscard]] bool TranslateBranch(const LirTerminator& term, const std::unordered_map<std::uint32_t, llvm::BasicBlock*>& blockMap);
+        [[nodiscard]] bool TranslateReturn(const LirTerminator& term);
+        [[nodiscard]] bool TranslateSwitch(const LirTerminator& term, const std::unordered_map<std::uint32_t, llvm::BasicBlock*>& blockMap);
 #endif
     };
 } // namespace Rux

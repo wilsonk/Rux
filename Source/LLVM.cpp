@@ -548,5 +548,64 @@ namespace Rux {
 
         return builder->CreateLoad(global->getType(), global, "globaladdr");
     }
+
+    bool LLVM::TranslateTerminator(const LirTerminator& term, const std::unordered_map<std::uint32_t, llvm::BasicBlock*>& blockMap) {
+        switch (term.kind) {
+            case LirTermKind::Jump:
+                return TranslateJump(term, blockMap);
+            case LirTermKind::Branch:
+                return TranslateBranch(term, blockMap);
+            case LirTermKind::Return:
+                return TranslateReturn(term);
+            case LirTermKind::Switch:
+                return TranslateSwitch(term, blockMap);
+            default:
+                return false;
+        }
+    }
+
+    bool LLVM::TranslateJump(const LirTerminator& term, const std::unordered_map<std::uint32_t, llvm::BasicBlock*>& blockMap) {
+        auto it = blockMap.find(term.trueTarget);
+        if (it == blockMap.end()) return false;
+
+        builder->CreateBr(it->second);
+        return true;
+    }
+
+    bool LLVM::TranslateBranch(const LirTerminator& term, const std::unordered_map<std::uint32_t, llvm::BasicBlock*>& blockMap) {
+        llvm::Value* cond = valueMap[term.cond];
+        if (!cond) return false;
+
+        auto trueIt = blockMap.find(term.trueTarget);
+        auto falseIt = blockMap.find(term.falseTarget);
+        if (trueIt == blockMap.end() || falseIt == blockMap.end()) return false;
+
+        builder->CreateCondBr(cond, trueIt->second, falseIt->second);
+        return true;
+    }
+
+    bool LLVM::TranslateReturn(const LirTerminator& term) {
+        if (term.retVal) {
+            llvm::Value* retVal = valueMap[*term.retVal];
+            if (!retVal) return false;
+            builder->CreateRet(retVal);
+        } else {
+            builder->CreateRetVoid();
+        }
+        return true;
+    }
+
+    bool LLVM::TranslateSwitch(const LirTerminator& term, const std::unordered_map<std::uint32_t, llvm::BasicBlock*>& blockMap) {
+        llvm::Value* cond = valueMap[term.cond];
+        if (!cond) return false;
+
+        auto defaultIt = blockMap.find(term.defaultTarget);
+        if (defaultIt == blockMap.end()) return false;
+
+        // TODO: Parse case values and create switch instruction
+        // For now, create a simple branch to default
+        builder->CreateBr(defaultIt->second);
+        return true;
+    }
 #endif
 } // namespace Rux
