@@ -8,7 +8,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 option(USE_LLVM_BACKEND "Enable LLVM backend for code generation" OFF)
 
 if (USE_LLVM_BACKEND)
-    find_package(LLVM 19 CONFIG)
+    find_package(LLVM CONFIG REQUIRED)
     message(STATUS "Found LLVM ${LLVM_PACKAGE_VERSION}")
     message(STATUS "Using LLVMConfig.cmake in: ${LLVM_DIR}")
 
