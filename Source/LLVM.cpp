@@ -127,7 +127,7 @@ namespace Rux {
         if (type.inner.empty()) return nullptr;
         llvm::Type* pointee = MapType(type.inner[0]);
         if (!pointee) return nullptr;
-        return llvm::PointerType::get(pointee, 0);
+        return llvm::PointerType::get(context, 0);
     }
 
     llvm::Type* LLVMTypeMapper::MapSliceType(const TypeRef& type) {
@@ -137,7 +137,7 @@ namespace Rux {
 
         // Slice is { pointer, length } - 16 bytes on 64-bit
         llvm::Type* fields[] = {
-            llvm::PointerType::get(elementType, 0),
+            llvm::PointerType::get(context, 0),
             llvm::Type::getInt64Ty(context)
         };
         return llvm::StructType::create(context, fields, "slice");
@@ -575,7 +575,8 @@ namespace Rux {
         llvm::Type* baseType = base->getType();
         if (!baseType->isPointerTy()) return nullptr;
 
-        llvm::StructType* structType = llvm::dyn_cast<llvm::StructType>(baseType->getPointerElementType());
+        llvm::PointerType* ptrType = llvm::cast<llvm::PointerType>(baseType);
+        llvm::StructType* structType = llvm::dyn_cast<llvm::StructType>(ptrType->getElementType());
         if (!structType) return nullptr;
 
         return builder->CreateStructGEP(structType, base, fieldIndex, "fieldptr");
@@ -591,7 +592,8 @@ namespace Rux {
         llvm::Type* baseType = base->getType();
         if (!baseType->isPointerTy()) return nullptr;
 
-        return builder->CreateGEP(baseType->getPointerElementType(), base, idx, "indexptr");
+        llvm::PointerType* ptrType = llvm::cast<llvm::PointerType>(baseType);
+        return builder->CreateGEP(ptrType->getElementType(), base, idx, "indexptr");
     }
 
     llvm::Value* LLVM::TranslatePhi(const LirInstr& instr) {
