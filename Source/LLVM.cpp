@@ -18,6 +18,7 @@
 #include <llvm/IR/LegacyPassManager.h>
 #include <llvm/Support/FileSystem.h>
 #include <llvm/Support/raw_ostream.h>
+#include <llvm/Support/Host.h>
 #endif
 
 namespace Rux {
@@ -224,17 +225,25 @@ namespace Rux {
         llvm::InitializeAllAsmParsers();
         llvm::InitializeAllAsmPrinters();
 
+        // Detect host target triple if not provided
+        if (this->targetTriple.empty()) {
+            this->targetTriple = DetectHostTargetTriple();
+        }
+
+        // Setup target machine
+        if (!SetupTargetMachine()) {
+            // TODO: Handle error
+        }
+
         // Create LLVM module
         module = std::make_unique<llvm::Module>(packageName.empty() ? "rux_module" : packageName, *context);
-        if (!targetTriple.empty()) {
-            module->setTargetTriple(targetTriple);
-        }
+        module->setTargetTriple(this->targetTriple);
 
         // Create IR builder
         builder = std::make_unique<llvm::IRBuilder<>>(*context);
 
         // Create type mapper
-        typeMapper = std::make_unique<LLVMTypeMapper>(*context, targetTriple);
+        typeMapper = std::make_unique<LLVMTypeMapper>(*context, this->targetTriple);
 #endif
     }
 
@@ -790,6 +799,45 @@ namespace Rux {
         // Translate functions
         for (const auto& func : mod.funcs) {
             if (!TranslateFunction(func)) return false;
+        }
+
+        return true;
+    }
+
+    std::string LLVM::DetectHostTargetTriple() const {
+        return llvm::sys::getDefaultTargetTriple();
+    }
+
+    bool LLVM::SetupTargetMachine() {
+        std::string error;
+        const llvm::Target* target = llvm::TargetRegistry::lookupTarget(targetTriple, error);
+
+        if (!target) {
+            // TODO: Handle error
+            return false;
+        }
+
+        // Create target machine with default settings
+        // TODO: Allow configuration of optimization level, relocation model, code model
+        llvm::TargetOptions opt;
+        auto relocModel = llvm::Reloc::Model::PIC_; // Position-independent code
+        auto codeModel = llvm::CodeModel::Small;
+        llvm::CodeGenOptLevel optLevel = llvm::CodeGenOptLevel::Default;
+
+        targetMachine = std::unique_ptr<llvm::TargetMachine>(
+            target->createTargetMachine(
+                targetTriple,
+                "", // CPU (default)
+                "", // Features (default)
+                opt,
+                relocModel,
+                codeModel,
+                optLevel
+            )
+        );
+
+        if (!targetMachine) {
+            return false;
         }
 
         return true;

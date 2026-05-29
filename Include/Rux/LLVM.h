@@ -13,6 +13,7 @@
 #include <llvm/IR/IRBuilder.h>
 #include <llvm/IR/LLVMContext.h>
 #include <llvm/IR/Module.h>
+#include <llvm/Target/TargetMachine.h>
 #endif
 
 #include <filesystem>
@@ -96,8 +97,12 @@ namespace Rux {
         mutable std::unique_ptr<llvm::LLVMContext> context;
         mutable std::unique_ptr<llvm::Module> module;
         mutable std::unique_ptr<llvm::IRBuilder<>> builder;
+        mutable std::unique_ptr<llvm::TargetMachine> targetMachine;
         mutable std::unordered_map<LirReg, llvm::Value*> valueMap; // Symbol table for LIR registers
         mutable std::unique_ptr<LLVMTypeMapper> typeMapper;
+
+        [[nodiscard]] bool SetupTargetMachine();
+        [[nodiscard]] std::string DetectHostTargetTriple() const;
 
         [[nodiscard]] llvm::Value* TranslateInstruction(const LirInstr& instr);
         [[nodiscard]] llvm::Value* TranslateConst(const LirInstr& instr);
