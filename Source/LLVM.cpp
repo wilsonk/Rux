@@ -973,6 +973,9 @@ namespace Rux {
 
     bool LLVM::LinkObjectFiles(const std::vector<std::filesystem::path>& objectFiles, const std::filesystem::path& outputPath) const {
 #ifdef USE_LLVM_BACKEND
+        // Create output directory if it doesn't exist
+        std::filesystem::create_directories(outputPath.parent_path());
+
         std::string cmd = GenerateLinkerCommand(objectFiles, outputPath);
         if (cmd.empty()) {
             return false;
