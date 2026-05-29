@@ -39,6 +39,7 @@
 // psapi.h depends on definitions from windows.h.
 // If reordered, MSVC will unleash an ancient curse upon this file.
 #ifdef _WIN32
+#  define NOMINMAX
 #  include <windows.h>
 #  include <psapi.h>
 #  include <winhttp.h>
@@ -179,6 +180,10 @@ namespace Rux {
         [[nodiscard]] std::string HostTargetTriple() {
 #if defined(_WIN32) && (defined(_M_X64) || defined(__x86_64__) || defined(__amd64__))
             return "windows-x64";
+#elif defined(__APPLE__)
+            // Rux currently emits x86-64 Mach-O binaries on macOS, even when
+            // the compiler itself runs on arm64.
+            return "macos-x64";
 #elif (defined(__linux__) || defined(__FreeBSD__) || defined(__OpenBSD__) || defined(__NetBSD__) ||                    \
        defined(__DragonFly__)) &&                                                                                      \
     (defined(__x86_64__) || defined(__amd64__))
@@ -189,7 +194,7 @@ namespace Rux {
         }
 
         [[nodiscard]] bool IsSupportedTargetTriple(const std::string_view target) {
-            return target == "linux-x64" || target == "windows-x64";
+            return target == "linux-x64" || target == "windows-x64" || target == "macos-x64";
         }
 
         [[nodiscard]] std::string DependencyPackageName(const Dependency& dep) {
@@ -563,7 +568,7 @@ namespace Rux {
         std::string targetName = target.empty() ? HostTargetTriple() : std::string(target);
         if (!IsSupportedTargetTriple(targetName)) {
             std::print(stderr,
-                       "error: unsupported target '{}'; supported targets are linux-x64 and windows-x64\n",
+                       "error: unsupported target '{}'; supported targets are linux-x64, macos-x64, and windows-x64\n",
                        targetName);
             return 1;
         }
