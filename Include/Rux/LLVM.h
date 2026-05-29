@@ -94,6 +94,25 @@ namespace Rux {
         std::string targetTriple;
 #ifdef USE_LLVM_BACKEND
         mutable std::unique_ptr<llvm::LLVMContext> context;
+        mutable std::unique_ptr<llvm::Module> module;
+        mutable std::unique_ptr<llvm::IRBuilder<>> builder;
+        mutable std::unordered_map<LirReg, llvm::Value*> valueMap; // Symbol table for LIR registers
+        mutable std::unique_ptr<LLVMTypeMapper> typeMapper;
+
+        [[nodiscard]] llvm::Value* TranslateInstruction(const LirInstr& instr);
+        [[nodiscard]] llvm::Value* TranslateConst(const LirInstr& instr);
+        [[nodiscard]] llvm::Value* TranslateAlloca(const LirInstr& instr);
+        [[nodiscard]] llvm::Value* TranslateLoad(const LirInstr& instr);
+        [[nodiscard]] llvm::Value* TranslateStore(const LirInstr& instr);
+        [[nodiscard]] llvm::Value* TranslateBinaryOp(const LirInstr& instr);
+        [[nodiscard]] llvm::Value* TranslateUnaryOp(const LirInstr& instr);
+        [[nodiscard]] llvm::Value* TranslateCmp(const LirInstr& instr);
+        [[nodiscard]] llvm::Value* TranslateCast(const LirInstr& instr);
+        [[nodiscard]] llvm::Value* TranslateCall(const LirInstr& instr);
+        [[nodiscard]] llvm::Value* TranslateFieldPtr(const LirInstr& instr);
+        [[nodiscard]] llvm::Value* TranslateIndexPtr(const LirInstr& instr);
+        [[nodiscard]] llvm::Value* TranslatePhi(const LirInstr& instr);
+        [[nodiscard]] llvm::Value* TranslateGlobalAddr(const LirInstr& instr);
 #endif
     };
 } // namespace Rux
