@@ -107,6 +107,10 @@ namespace Rux {
         [[nodiscard]] bool EmitObjectFile(const std::filesystem::path& path) const;
         [[nodiscard]] std::string GetObjectFileExtension() const;
 
+        [[nodiscard]] std::string DetectSystemLinker() const;
+        [[nodiscard]] bool LinkObjectFiles(const std::vector<std::filesystem::path>& objectFiles, const std::filesystem::path& outputPath) const;
+        [[nodiscard]] std::string GenerateLinkerCommand(const std::vector<std::filesystem::path>& objectFiles, const std::filesystem::path& outputPath) const;
+
         [[nodiscard]] llvm::Value* TranslateInstruction(const LirInstr& instr);
         [[nodiscard]] llvm::Value* TranslateConst(const LirInstr& instr);
         [[nodiscard]] llvm::Value* TranslateAlloca(const LirInstr& instr);

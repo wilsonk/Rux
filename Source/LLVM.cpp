@@ -27,6 +27,8 @@
 #include <llvm/Target/TargetOptions.h>
 #endif
 
+#include <cstdlib>
+
 namespace Rux {
 #ifdef USE_LLVM_BACKEND
     LLVMTypeMapper::LLVMTypeMapper(llvm::LLVMContext& context, const std::string& targetTriple)
@@ -912,6 +914,73 @@ namespace Rux {
         }
 
         return true;
+    }
+
+    std::string LLVM::DetectSystemLinker() const {
+#ifdef USE_LLVM_BACKEND
+        if (targetTriple.find("windows") != std::string::npos ||
+            targetTriple.find("win32") != std::string::npos ||
+            targetTriple.find("msvc") != std::string::npos) {
+            return "link.exe";
+        } else if (targetTriple.find("apple") != std::string::npos ||
+                   targetTriple.find("darwin") != std::string::npos) {
+            return "ld64";
+        } else {
+            return "ld";
+        }
+#else
+        return "ld";
+#endif
+    }
+
+    std::string LLVM::GenerateLinkerCommand(const std::vector<std::filesystem::path>& objectFiles, const std::filesystem::path& outputPath) const {
+#ifdef USE_LLVM_BACKEND
+        std::string linker = DetectSystemLinker();
+        std::string cmd = linker;
+
+        if (linker == "link.exe") {
+            // Windows linker
+            cmd += " /OUT:" + outputPath.string();
+            for (const auto& obj : objectFiles) {
+                cmd += " " + obj.string();
+            }
+            cmd += " kernel32.lib user32.lib";
+        } else if (linker == "ld64") {
+            // macOS linker
+            cmd += " -o " + outputPath.string();
+            for (const auto& obj : objectFiles) {
+                cmd += " " + obj.string();
+            }
+            cmd += " -lSystem";
+            // TODO: Add -syslibroot with xcrun
+        } else {
+            // Linux/BSD linker
+            cmd += " -o " + outputPath.string();
+            for (const auto& obj : objectFiles) {
+                cmd += " " + obj.string();
+            }
+            cmd += " -dynamic-linker /lib64/ld-linux-x86-64.so.2";
+            cmd += " -lc -lm";
+        }
+
+        return cmd;
+#else
+        return "";
+#endif
+    }
+
+    bool LLVM::LinkObjectFiles(const std::vector<std::filesystem::path>& objectFiles, const std::filesystem::path& outputPath) const {
+#ifdef USE_LLVM_BACKEND
+        std::string cmd = GenerateLinkerCommand(objectFiles, outputPath);
+        if (cmd.empty()) {
+            return false;
+        }
+
+        int result = std::system(cmd.c_str());
+        return result == 0;
+#else
+        return false;
+#endif
     }
 #endif
 } // namespace Rux
