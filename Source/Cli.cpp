@@ -945,6 +945,7 @@ namespace Rux {
         // LLVM backend or RCU object generation
 
         std::vector<std::filesystem::path> objectFiles;
+        std::vector<RcuFile> rcuFiles; // For RCU backend
         if (useLlvm) {
 #ifdef USE_LLVM_BACKEND
             if (opts.verbose) std::print("  Using LLVM backend for {}\n", manifest->package.name);
@@ -971,7 +972,7 @@ namespace Rux {
             if (opts.verbose) std::print("  Emitting RCU objects for {}\n", manifest->package.name);
 
             Rcu rcu(lirPackage, std::string(manifest->package.name));
-            auto rcuFiles = rcu.Generate();
+            rcuFiles = rcu.Generate();
 
             if (dumpRcu) {
                 auto objDir = manifestPath->parent_path() / "Temp" / "Obj";
