@@ -89,6 +89,14 @@ namespace Rux {
          */
         [[nodiscard]] bool EmitIR(const std::filesystem::path& path) const;
 
+        /**
+         * @brief Link object files using system linker
+         * @param objectFiles List of object file paths to link
+         * @param outputPath Output executable path
+         * @return true on success, false on failure
+         */
+        [[nodiscard]] bool LinkObjectFiles(const std::vector<std::filesystem::path>& objectFiles, const std::filesystem::path& outputPath) const;
+
     private:
         LirPackage lir;
         std::string packageName;
@@ -108,7 +116,6 @@ namespace Rux {
         [[nodiscard]] std::string GetObjectFileExtension() const;
 
         [[nodiscard]] std::string DetectSystemLinker() const;
-        [[nodiscard]] bool LinkObjectFiles(const std::vector<std::filesystem::path>& objectFiles, const std::filesystem::path& outputPath) const;
         [[nodiscard]] std::string GenerateLinkerCommand(const std::vector<std::filesystem::path>& objectFiles, const std::filesystem::path& outputPath) const;
 
         [[nodiscard]] llvm::Value* TranslateInstruction(const LirInstr& instr);

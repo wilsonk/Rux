@@ -44,7 +44,6 @@ namespace Rux {
 
             // Primitive types
             case TypeRef::Kind::Bool8:
-            case TypeRef::Kind::Bool:
                 return llvm::Type::getInt8Ty(context);
             case TypeRef::Kind::Bool16:
                 return llvm::Type::getInt16Ty(context);
@@ -55,7 +54,6 @@ namespace Rux {
             case TypeRef::Kind::Char16:
                 return llvm::Type::getInt16Ty(context);
             case TypeRef::Kind::Char32:
-            case TypeRef::Kind::Char:
                 return llvm::Type::getInt32Ty(context);
             case TypeRef::Kind::Int8:
                 return llvm::Type::getInt8Ty(context);
@@ -76,7 +74,6 @@ namespace Rux {
             case TypeRef::Kind::Float32:
                 return llvm::Type::getFloatTy(context);
             case TypeRef::Kind::Float64:
-            case TypeRef::Kind::Float:
                 return llvm::Type::getDoubleTy(context);
 
             // Platform-dependent types
@@ -130,7 +127,7 @@ namespace Rux {
         if (type.inner.empty()) return nullptr;
         llvm::Type* pointee = MapType(type.inner[0]);
         if (!pointee) return nullptr;
-        return pointee->getPointerTo();
+        return llvm::PointerType::get(context, 0, pointee);
     }
 
     llvm::Type* LLVMTypeMapper::MapSliceType(const TypeRef& type) {
@@ -140,7 +137,7 @@ namespace Rux {
 
         // Slice is { pointer, length } - 16 bytes on 64-bit
         llvm::Type* fields[] = {
-            elementType->getPointerTo(),
+            llvm::PointerType::get(context, 0, elementType),
             llvm::Type::getInt64Ty(context)
         };
         return llvm::StructType::create(context, fields, "slice");
@@ -208,12 +205,8 @@ namespace Rux {
             case Rux::CallingConvention::Default:
                 // Let LLVM choose the default for the target
                 return llvm::CallingConv::C;
-            case Rux::CallingConvention::C:
-                return llvm::CallingConv::C;
-            case Rux::CallingConvention::StdCall:
-                return llvm::CallingConv::X86_StdCall;
-            case Rux::CallingConvention::FastCall:
-                return llvm::CallingConv::X86_FastCall;
+            case Rux::CallingConvention::Win64:
+                return llvm::CallingConv::X86_64_Win64;
             default:
                 return llvm::CallingConv::C;
         }
@@ -245,7 +238,7 @@ namespace Rux {
 
         // Create LLVM module
         module = std::make_unique<llvm::Module>(packageName.empty() ? "rux_module" : packageName, *context);
-        module->setTargetTriple(this->targetTriple);
+        module->setTargetTriple(llvm::Triple(this->targetTriple));
 
         // Create IR builder
         builder = std::make_unique<llvm::IRBuilder<>>(*context);
@@ -261,7 +254,7 @@ namespace Rux {
 
         // Translate all modules in the package
         for (const auto& mod : lir.modules) {
-            if (!TranslateModule(mod)) {
+            if (!const_cast<LLVM*>(this)->TranslateModule(mod)) {
                 // TODO: Handle error
                 return {};
             }
@@ -582,7 +575,7 @@ namespace Rux {
         llvm::Type* baseType = base->getType();
         if (!baseType->isPointerTy()) return nullptr;
 
-        llvm::StructType* structType = llvm::dyn_cast<llvm::StructType>(baseType->getPointerElementType());
+        llvm::StructType* structType = llvm::dyn_cast<llvm::StructType>(baseType->getNonOpaquePointerElementType());
         if (!structType) return nullptr;
 
         return builder->CreateStructGEP(structType, base, fieldIndex, "fieldptr");
@@ -598,7 +591,7 @@ namespace Rux {
         llvm::Type* baseType = base->getType();
         if (!baseType->isPointerTy()) return nullptr;
 
-        return builder->CreateGEP(baseType->getPointerElementType(), base, idx, "indexptr");
+        return builder->CreateGEP(baseType->getNonOpaquePointerElementType(), base, idx, "indexptr");
     }
 
     llvm::Value* LLVM::TranslatePhi(const LirInstr& instr) {
@@ -798,7 +791,7 @@ namespace Rux {
 
         if (largestType) {
             llvm::StructType* unionType = llvm::StructType::create(*context, {largestType}, decl.name);
-            typeMapper->MapType(TypeRef{TypeRef::Kind::Named, decl.name}); // Cache the type
+            (void)typeMapper->MapType(TypeRef{TypeRef::Kind::Named, decl.name}); // Cache the type
         }
 
         return true;
@@ -894,7 +887,7 @@ namespace Rux {
 
         targetMachine = std::unique_ptr<llvm::TargetMachine>(
             target->createTargetMachine(
-                targetTriple,
+                llvm::Triple(targetTriple),
                 "", // CPU (default)
                 "", // Features (default)
                 opt,
