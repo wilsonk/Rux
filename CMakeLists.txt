@@ -22,13 +22,19 @@ if (USE_LLVM_BACKEND)
         irreader
         codegen
         target
+        targetparser
         x86asmparser
         x86codegen
+        x86desc
         aarch64codegen
+        aarch64desc
         asmparser
         mc
+        mcparser
         analysis
         transformutils
+        binaryformat
+        object
     )
 endif ()
 
