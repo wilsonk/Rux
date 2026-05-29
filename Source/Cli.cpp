@@ -952,17 +952,17 @@ namespace Rux {
 
             LLVM llvmBackend(lirPackage, std::string(manifest->package.name), std::string(target));
 
-            if (emitLlvm) {
-                if (opts.verbose) std::print("  Emitting LLVM IR for {}\n", manifest->package.name);
-                auto llvmDir = manifestPath->parent_path() / "Temp" / "LLVM";
-                std::filesystem::create_directories(llvmDir);
-                llvmBackend.EmitIR(llvmDir / "out.ll");
-            }
-
             objectFiles = llvmBackend.Generate();
             if (objectFiles.empty()) {
                 std::print(stderr, "error: LLVM backend failed to generate object files\n");
                 return 1;
+            }
+
+            if (emitLlvm) {
+                if (opts.verbose) std::print("  Emitting LLVM IR for {}\n", manifest->package.name);
+                auto llvmDir = manifestPath->parent_path() / "Temp" / "LLVM";
+                std::filesystem::create_directories(llvmDir);
+                (void)llvmBackend.EmitIR(llvmDir / "out.ll");
             }
 #else
             std::print(stderr, "error: LLVM backend not enabled in this build (rebuild with -DUSE_LLVM_BACKEND=ON)\n");

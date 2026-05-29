@@ -277,8 +277,17 @@ namespace Rux {
 
     bool LLVM::EmitIR(const std::filesystem::path& path) const {
 #ifdef USE_LLVM_BACKEND
-        // TODO: Implement LLVM IR emission
-        return false;
+        std::error_code ec;
+        llvm::raw_fd_ostream dest(path.string(), ec, llvm::sys::fs::OF_Text);
+
+        if (ec) {
+            return false;
+        }
+
+        module->print(dest, nullptr);
+        dest.flush();
+
+        return true;
 #else
         return false;
 #endif
@@ -397,7 +406,21 @@ namespace Rux {
         llvm::Type* llvmType = typeMapper->MapType(instr.type);
         if (!llvmType) return nullptr;
 
-        return builder->CreateAlloca(llvmType, nullptr, "alloca");
+        // Check if this is an array allocation (strArg might contain size)
+        // For now, if strArg is not empty, parse it as array size
+        llvm::Value* arraySize = nullptr;
+        if (!instr.strArg.empty()) {
+            try {
+                uint64_t size = std::stoull(instr.strArg);
+                if (size > 1) {
+                    arraySize = llvm::ConstantInt::get(llvm::Type::getInt64Ty(*context), size);
+                }
+            } catch (const std::exception&) {
+                // Not a number, use default
+            }
+        }
+
+        return builder->CreateAlloca(llvmType, arraySize, "alloca");
     }
 
     llvm::Value* LLVM::TranslateLoad(const LirInstr& instr) {
@@ -559,8 +582,40 @@ namespace Rux {
     }
 
     llvm::Value* LLVM::TranslateCall(const LirInstr& instr) {
-        // TODO: Implement call translation
-        return nullptr;
+        // Look up the function by name
+        llvm::Function* callee = module->getFunction(instr.strArg);
+        if (!callee) {
+            // Function not found in module, might be external
+            // Try to declare it
+            llvm::Type* retType = typeMapper->MapType(instr.type);
+            if (!retType) return nullptr;
+
+            std::vector<llvm::Type*> paramTypes;
+            for (auto srcReg : instr.srcs) {
+                llvm::Value* srcVal = valueMap[srcReg];
+                if (!srcVal) return nullptr;
+                paramTypes.push_back(srcVal->getType());
+            }
+
+            llvm::FunctionType* funcType = llvm::FunctionType::get(retType, paramTypes, false);
+            callee = llvm::Function::Create(
+                funcType,
+                llvm::GlobalValue::ExternalLinkage,
+                instr.strArg,
+                module.get()
+            );
+        }
+
+        // Gather arguments
+        std::vector<llvm::Value*> args;
+        for (auto srcReg : instr.srcs) {
+            llvm::Value* srcVal = valueMap[srcReg];
+            if (!srcVal) return nullptr;
+            args.push_back(srcVal);
+        }
+
+        // Create the call
+        return builder->CreateCall(callee, args, "call");
     }
 
     llvm::Value* LLVM::TranslateFieldPtr(const LirInstr& instr) {
@@ -672,6 +727,14 @@ namespace Rux {
         if (term.retVal) {
             llvm::Value* retVal = valueMap[*term.retVal];
             if (!retVal) return false;
+
+            // Cast return value to function return type if needed
+            llvm::Function* currentFunc = builder->GetInsertBlock()->getParent();
+            llvm::Type* expectedRetType = currentFunc->getReturnType();
+            if (retVal->getType() != expectedRetType) {
+                retVal = builder->CreateBitCast(retVal, expectedRetType, "retcast");
+            }
+
             builder->CreateRet(retVal);
         } else {
             builder->CreateRetVoid();
@@ -707,13 +770,29 @@ namespace Rux {
         llvm::Type* returnType = typeMapper->MapType(func.returnType);
         if (!returnType) return false;
 
+        // Create function
+        // Rename Main to main for C compatibility
+        std::string funcName = func.name;
+        if (funcName == "Main") {
+            funcName = "main";
+        }
+
+        // For main function, ensure it returns i32 for C compatibility
+        if (funcName == "main" && returnType->isIntegerTy(64)) {
+            returnType = llvm::Type::getInt32Ty(*context);
+        }
+
         llvm::FunctionType* funcType = llvm::FunctionType::get(returnType, paramTypes, false);
 
-        // Create function
+        // Main function must have external linkage for the linker to find it
+        auto linkage = func.isExtern ? llvm::GlobalValue::ExternalLinkage :
+                      (funcName == "main" ? llvm::GlobalValue::ExternalLinkage :
+                       (func.isPublic ? llvm::GlobalValue::ExternalLinkage : llvm::GlobalValue::PrivateLinkage));
+
         llvm::Function* llvmFunc = llvm::Function::Create(
             funcType,
-            func.isExtern ? llvm::GlobalValue::ExternalLinkage : llvm::GlobalValue::PrivateLinkage,
-            func.name,
+            linkage,
+            funcName,
             module.get()
         );
 
@@ -851,29 +930,47 @@ namespace Rux {
     bool LLVM::TranslateModule(const LirModule& mod) {
         // Translate type declarations first
         for (const auto& decl : mod.structs) {
-            if (!TranslateStructDecl(decl)) return false;
+            if (!TranslateStructDecl(decl)) {
+                // TODO: Log error
+                return false;
+            }
         }
 
         for (const auto& decl : mod.enums) {
-            if (!TranslateEnumDecl(decl)) return false;
+            if (!TranslateEnumDecl(decl)) {
+                // TODO: Log error
+                return false;
+            }
         }
 
         for (const auto& decl : mod.unions) {
-            if (!TranslateUnionDecl(decl)) return false;
+            if (!TranslateUnionDecl(decl)) {
+                // TODO: Log error
+                return false;
+            }
         }
 
         // Translate constants and extern variables
         for (const auto& decl : mod.consts) {
-            if (!TranslateConstDecl(decl)) return false;
+            if (!TranslateConstDecl(decl)) {
+                // TODO: Log error
+                return false;
+            }
         }
 
         for (const auto& var : mod.externVars) {
-            if (!TranslateExternVar(var)) return false;
+            if (!TranslateExternVar(var)) {
+                // TODO: Log error
+                return false;
+            }
         }
 
         // Translate functions
         for (const auto& func : mod.funcs) {
-            if (!TranslateFunction(func)) return false;
+            if (!TranslateFunction(func)) {
+                // TODO: Log error
+                return false;
+            }
         }
 
         return true;
@@ -975,7 +1072,16 @@ namespace Rux {
         // Create output directory if it doesn't exist
         std::filesystem::create_directories(outputPath.parent_path());
 
-        std::string cmd = GenerateLinkerCommand(objectFiles, outputPath);
+        // Compile and add thunks object file
+        std::filesystem::path thunksObj = outputPath.parent_path() / "llvm_thunks.o";
+        std::filesystem::path thunksSource = std::filesystem::path(__FILE__).parent_path() / "LLVMThunks.c";
+        std::string compileCmd = "clang -c " + thunksSource.string() + " -o " + thunksObj.string();
+        std::system(compileCmd.c_str());
+
+        std::vector<std::filesystem::path> allObjectFiles = objectFiles;
+        allObjectFiles.push_back(thunksObj);
+
+        std::string cmd = GenerateLinkerCommand(allObjectFiles, outputPath);
         if (cmd.empty()) {
             return false;
         }

@@ -1,0 +1,38 @@
+/*
+    Rux Compiler
+    Copyright © 2026 Rux Contributors
+    Licensed under the MIT License
+
+    Platform-specific I/O thunks for LLVM backend
+    These provide Windows API compatibility on Linux/macOS
+*/
+
+#include <unistd.h>
+#include <sys/syscall.h>
+
+// GetStdHandle thunk
+// -10: STD_INPUT_HANDLE  -> returns 0 (stdin)
+// -11: STD_OUTPUT_HANDLE -> returns 1 (stdout)
+// -12: STD_ERROR_HANDLE  -> returns 2 (stderr)
+long GetStdHandle(long handle) {
+    if (handle == -10) return 0;  // STD_INPUT_HANDLE
+    if (handle == -11) return 1;  // STD_OUTPUT_HANDLE
+    if (handle == -12) return 2;  // STD_ERROR_HANDLE
+    return -1;
+}
+
+// WriteFile thunk
+// Simplified version that writes to file descriptor
+long WriteFile(long handle, void* buffer, long bytesToWrite, long* bytesWritten, long overlapped) {
+    ssize_t result = write((int)handle, buffer, (size_t)bytesToWrite);
+    if (bytesWritten) *bytesWritten = (long)result;
+    return result > 0 ? 1 : 0;
+}
+
+// ReadFile thunk
+// Simplified version that reads from file descriptor
+long ReadFile(long handle, void* buffer, long bytesToRead, long* bytesRead, long overlapped) {
+    ssize_t result = read((int)handle, buffer, (size_t)bytesToRead);
+    if (bytesRead) *bytesRead = (long)result;
+    return result > 0 ? 1 : 0;
+}

@@ -64,6 +64,7 @@ add_executable(rux
 if (USE_LLVM_BACKEND)
     target_sources(rux PRIVATE
         Source/LLVM.cpp
+        Source/LLVMThunks.c
         Include/Rux/LLVM.h
     )
 endif ()
