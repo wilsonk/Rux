@@ -122,6 +122,13 @@ namespace Rux {
 
         [[nodiscard]] bool TranslateFunction(const LirFunc& func);
         [[nodiscard]] bool TranslateBlock(const LirBlock& block, const std::unordered_map<std::uint32_t, llvm::BasicBlock*>& blockMap);
+
+        [[nodiscard]] bool TranslateStructDecl(const LirStructDecl& decl);
+        [[nodiscard]] bool TranslateEnumDecl(const LirEnumDecl& decl);
+        [[nodiscard]] bool TranslateUnionDecl(const LirUnionDecl& decl);
+        [[nodiscard]] bool TranslateConstDecl(const LirConstDecl& decl);
+        [[nodiscard]] bool TranslateExternVar(const LirExternVar& var);
+        [[nodiscard]] bool TranslateModule(const LirModule& mod);
 #endif
     };
 } // namespace Rux

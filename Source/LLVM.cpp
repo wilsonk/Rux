@@ -679,5 +679,120 @@ namespace Rux {
 
         return true;
     }
+
+    bool LLVM::TranslateStructDecl(const LirStructDecl& decl) {
+        std::vector<llvm::Type*> fieldTypes;
+        for (const auto& field : decl.fields) {
+            llvm::Type* fieldType = typeMapper->MapType(field.type);
+            if (!fieldType) return false;
+            fieldTypes.push_back(fieldType);
+        }
+
+        llvm::StructType* structType = llvm::StructType::create(*context, fieldTypes, decl.name);
+        typeMapper->MapType(TypeRef{TypeRef::Kind::Named, decl.name}); // Cache the type
+        return true;
+    }
+
+    bool LLVM::TranslateEnumDecl(const LirEnumDecl& decl) {
+        // For now, treat enums as their base type
+        // TODO: Implement proper enum representation with discriminant
+        llvm::Type* baseType = typeMapper->MapType(decl.baseType);
+        if (!baseType) return false;
+
+        typeMapper->MapType(TypeRef{TypeRef::Kind::Named, decl.name}); // Cache the type
+        return true;
+    }
+
+    bool LLVM::TranslateUnionDecl(const LirUnionDecl& decl) {
+        // For now, create a struct with the largest field
+        // TODO: Implement proper union representation with tag
+        llvm::Type* largestType = nullptr;
+        size_t largestSize = 0;
+
+        for (const auto& field : decl.fields) {
+            llvm::Type* fieldType = typeMapper->MapType(field.type);
+            if (!fieldType) return false;
+
+            // TODO: Calculate actual size
+            // For now, just use the first field type
+            if (!largestType) {
+                largestType = fieldType;
+            }
+        }
+
+        if (largestType) {
+            llvm::StructType* unionType = llvm::StructType::create(*context, {largestType}, decl.name);
+            typeMapper->MapType(TypeRef{TypeRef::Kind::Named, decl.name}); // Cache the type
+        }
+
+        return true;
+    }
+
+    bool LLVM::TranslateConstDecl(const LirConstDecl& decl) {
+        llvm::Type* constType = typeMapper->MapType(decl.type);
+        if (!constType) return false;
+
+        // TODO: Parse the constant value from decl.value
+        // For now, create a null constant
+        llvm::Constant* init = llvm::Constant::getNullValue(constType);
+
+        new llvm::GlobalVariable(
+            *module,
+            constType,
+            true, // is constant
+            llvm::GlobalValue::PrivateLinkage,
+            init,
+            decl.name
+        );
+
+        return true;
+    }
+
+    bool LLVM::TranslateExternVar(const LirExternVar& var) {
+        llvm::Type* varType = typeMapper->MapType(var.type);
+        if (!varType) return false;
+
+        new llvm::GlobalVariable(
+            *module,
+            varType,
+            false, // not constant
+            llvm::GlobalValue::ExternalLinkage,
+            nullptr, // external, no initializer
+            var.name
+        );
+
+        return true;
+    }
+
+    bool LLVM::TranslateModule(const LirModule& mod) {
+        // Translate type declarations first
+        for (const auto& decl : mod.structs) {
+            if (!TranslateStructDecl(decl)) return false;
+        }
+
+        for (const auto& decl : mod.enums) {
+            if (!TranslateEnumDecl(decl)) return false;
+        }
+
+        for (const auto& decl : mod.unions) {
+            if (!TranslateUnionDecl(decl)) return false;
+        }
+
+        // Translate constants and extern variables
+        for (const auto& decl : mod.consts) {
+            if (!TranslateConstDecl(decl)) return false;
+        }
+
+        for (const auto& var : mod.externVars) {
+            if (!TranslateExternVar(var)) return false;
+        }
+
+        // Translate functions
+        for (const auto& func : mod.funcs) {
+            if (!TranslateFunction(func)) return false;
+        }
+
+        return true;
+    }
 #endif
 } // namespace Rux
