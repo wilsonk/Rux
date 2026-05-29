@@ -12,6 +12,7 @@
 #include "Rux/Lexer.h"
 #include "Rux/Linker.h"
 #include "Rux/Lir.h"
+#include "Rux/LLVM.h"
 #include "Rux/Manifest.h"
 #include "Rux/Package.h"
 #include "Rux/Parser.h"
@@ -497,6 +498,9 @@ namespace Rux {
         bool dumpAsm = false;
         bool dumpRcu = false;
         bool showStats = false;
+        bool useLlvm = false;
+        bool emitLlvm = false;
+        std::string_view optLevel;
         for (std::size_t i = 0; i < args.size(); ++i) {
             std::string_view arg = args[i];
             if (arg == "--release") {
@@ -539,6 +543,18 @@ namespace Rux {
             }
             if (arg == "--dump-rcu") {
                 dumpRcu = true;
+                continue;
+            }
+            if (arg == "--use-llvm") {
+                useLlvm = true;
+                continue;
+            }
+            if (arg == "--emit-llvm") {
+                emitLlvm = true;
+                continue;
+            }
+            if (arg == "--opt-level" && i + 1 < args.size()) {
+                optLevel = args[++i];
                 continue;
             }
             if (arg == "--profile" && i + 1 < args.size()) {
@@ -926,25 +942,58 @@ namespace Rux {
             Asm::Emit(lirPackage, asmDir / "out.asm");
         }
 
-        // RCU object generation
+        // LLVM backend or RCU object generation
 
-        if (opts.verbose) std::print("  Emitting RCU objects for {}\n", manifest->package.name);
+        std::vector<std::filesystem::path> objectFiles;
+        if (useLlvm) {
+#ifdef USE_LLVM_BACKEND
+            if (opts.verbose) std::print("  Using LLVM backend for {}\n", manifest->package.name);
 
-        Rcu rcu(lirPackage, std::string(manifest->package.name));
-        auto rcuFiles = rcu.Generate();
+            LLVM llvmBackend(lirPackage, std::string(manifest->package.name), std::string(target));
 
-        if (dumpRcu) {
-            auto objDir = manifestPath->parent_path() / "Temp" / "Obj";
-            auto dumpDir = manifestPath->parent_path() / "Temp" / "Rcu";
-            std::filesystem::create_directories(objDir);
-            std::filesystem::create_directories(dumpDir);
+            if (emitLlvm) {
+                if (opts.verbose) std::print("  Emitting LLVM IR for {}\n", manifest->package.name);
+                auto llvmDir = manifestPath->parent_path() / "Temp" / "LLVM";
+                std::filesystem::create_directories(llvmDir);
+                llvmBackend.EmitIR(llvmDir / "out.ll");
+            }
 
+            objectFiles = llvmBackend.Generate();
+            if (objectFiles.empty()) {
+                std::print(stderr, "error: LLVM backend failed to generate object files\n");
+                return 1;
+            }
+#else
+            std::print(stderr, "error: LLVM backend not enabled in this build (rebuild with -DUSE_LLVM_BACKEND=ON)\n");
+            return 1;
+#endif
+        } else {
+            if (opts.verbose) std::print("  Emitting RCU objects for {}\n", manifest->package.name);
+
+            Rcu rcu(lirPackage, std::string(manifest->package.name));
+            auto rcuFiles = rcu.Generate();
+
+            if (dumpRcu) {
+                auto objDir = manifestPath->parent_path() / "Temp" / "Obj";
+                auto dumpDir = manifestPath->parent_path() / "Temp" / "Rcu";
+                std::filesystem::create_directories(objDir);
+                std::filesystem::create_directories(dumpDir);
+
+                for (const auto& rcuFile : rcuFiles) {
+                    std::filesystem::path stem = rcuFile.sourcePath.empty()
+                        ? std::filesystem::path("out")
+                        : std::filesystem::path(rcuFile.sourcePath).stem();
+                    Rcu::Emit(rcuFile, objDir / (stem.string() + ".rcu"));
+                    Rcu::Dump(rcuFile, dumpDir / (stem.string() + ".rcu.txt"));
+                }
+            }
+
+            // Convert RcuFiles to object file paths for linking
             for (const auto& rcuFile : rcuFiles) {
                 std::filesystem::path stem = rcuFile.sourcePath.empty()
                     ? std::filesystem::path("out")
                     : std::filesystem::path(rcuFile.sourcePath).stem();
-                Rcu::Emit(rcuFile, objDir / (stem.string() + ".rcu"));
-                Rcu::Dump(rcuFile, dumpDir / (stem.string() + ".rcu.txt"));
+                objectFiles.push_back(manifestPath->parent_path() / "Temp" / "Obj" / (stem.string() + ".rcu"));
             }
         }
         stats.codegen = ElapsedMs(codegenStart);
@@ -962,11 +1011,24 @@ namespace Rux {
 #endif
         const auto exePath = binDir / outputName;
 
-        Linker linker(std::move(rcuFiles), std::string(manifest->package.name), {root});
-        if (!linker.Link(exePath)) {
-            for (const auto& err : linker.Errors())
-                std::print(stderr, "error: {}\n", err.message);
+        if (useLlvm) {
+#ifdef USE_LLVM_BACKEND
+            LLVM llvmBackend(lirPackage, std::string(manifest->package.name), std::string(target));
+            if (!llvmBackend.LinkObjectFiles(objectFiles, exePath)) {
+                std::print(stderr, "error: LLVM linker failed\n");
+                return 1;
+            }
+#else
+            std::print(stderr, "error: LLVM backend not enabled in this build\n");
             return 1;
+#endif
+        } else {
+            Linker linker(std::move(rcuFiles), std::string(manifest->package.name), {root});
+            if (!linker.Link(exePath)) {
+                for (const auto& err : linker.Errors())
+                    std::print(stderr, "error: {}\n", err.message);
+                return 1;
+            }
         }
         stats.linking = ElapsedMs(linkingStart);
 
@@ -2651,6 +2713,9 @@ namespace Rux {
                    "  --dump-rcu           Write RCU object files to Temp/Obj/ and text dumps to Temp/Rcu/\n"
                    "  --dump-sema          Write semantic analysis results to Temp/Sema/sema.txt\n"
                    "  --dump-tokens        Write the token stream to Temp/Tokens/<file>.tokens\n"
+                   "  --use-llvm           Use LLVM backend instead of RCU (requires LLVM build)\n"
+                   "  --emit-llvm          Write LLVM IR to Temp/LLVM/out.ll (requires --use-llvm)\n"
+                   "  --opt-level <n>      Set LLVM optimization level (0-3, requires --use-llvm)\n"
                    "\n"
                    "Artifacts are stored under [Build].Output, defaulting to Bin/Debug/ or Bin/Release/.\n"
                    "\n"
@@ -2664,7 +2729,9 @@ namespace Rux {
                    "  rux build --dump-hir\n"
                    "  rux build --dump-lir\n"
                    "  rux build --dump-asm\n"
-                   "  rux build --dump-rcu\n");
+                   "  rux build --dump-rcu\n"
+                   "  rux build --use-llvm\n"
+                   "  rux build --use-llvm --emit-llvm\n");
     }
 
     void Cli::PrintHelpClean() {
