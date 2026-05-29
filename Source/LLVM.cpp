@@ -291,21 +291,17 @@ namespace Rux {
 #endif
     }
 
-    std::string LLVM::GetObjectFileExtension() const {
 #ifdef USE_LLVM_BACKEND
+    std::string LLVM::GetObjectFileExtension() const {
         if (targetTriple.find("windows") != std::string::npos ||
             targetTriple.find("win32") != std::string::npos ||
             targetTriple.find("msvc") != std::string::npos) {
             return ".obj";
         }
         return ".o";
-#else
-        return ".o";
-#endif
     }
 
     bool LLVM::EmitObjectFile(const std::filesystem::path& path) const {
-#ifdef USE_LLVM_BACKEND
         if (!targetMachine) {
             return false;
         }
@@ -334,10 +330,8 @@ namespace Rux {
         dest.flush();
 
         return true;
-#else
-        return false;
-#endif
     }
+#endif
 
 #ifdef USE_LLVM_BACKEND
     llvm::Value* LLVM::TranslateInstruction(const LirInstr& instr) {
@@ -877,6 +871,7 @@ namespace Rux {
         return true;
     }
 
+#ifdef USE_LLVM_BACKEND
     std::string LLVM::DetectHostTargetTriple() const {
         return llvm::sys::getDefaultTargetTriple();
     }
@@ -917,7 +912,6 @@ namespace Rux {
     }
 
     std::string LLVM::DetectSystemLinker() const {
-#ifdef USE_LLVM_BACKEND
         if (targetTriple.find("windows") != std::string::npos ||
             targetTriple.find("win32") != std::string::npos ||
             targetTriple.find("msvc") != std::string::npos) {
