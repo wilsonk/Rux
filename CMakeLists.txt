@@ -17,24 +17,7 @@ if (USE_LLVM_BACKEND)
     add_definitions(-DUSE_LLVM_BACKEND)
 
     llvm_map_components_to_libnames(llvm_libs
-        core
-        support
-        irreader
-        codegen
-        target
-        targetparser
-        x86asmparser
-        x86codegen
-        x86desc
-        aarch64codegen
-        aarch64desc
-        asmparser
-        mc
-        mcparser
-        analysis
-        transformutils
-        binaryformat
-        object
+        all
     )
 endif ()
 
