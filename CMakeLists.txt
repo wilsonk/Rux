@@ -4,6 +4,33 @@ project(Rux VERSION 0.2.2)
 set(CMAKE_CXX_STANDARD 26)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
+# LLVM Backend Support (optional)
+option(USE_LLVM_BACKEND "Enable LLVM backend for code generation" OFF)
+
+if (USE_LLVM_BACKEND)
+    find_package(LLVM 19 REQUIRED CONFIG)
+    message(STATUS "Found LLVM ${LLVM_PACKAGE_VERSION}")
+    message(STATUS "Using LLVMConfig.cmake in: ${LLVM_DIR}")
+
+    include_directories(${LLVM_INCLUDE_DIRS})
+    add_definitions(${LLVM_DEFINITIONS})
+
+    llvm_map_components_to_libnames(llvm_libs
+        core
+        support
+        irreader
+        codegen
+        target
+        x86asmparser
+        x86codegen
+        aarch64codegen
+        asmparser
+        mc
+        analysis
+        transformutils
+    )
+endif ()
+
 string(TIMESTAMP RUX_BUILD_DATE "%Y-%m-%d")
 string(TIMESTAMP RUX_BUILD_TIME "%H:%M:%S")
 
@@ -45,6 +72,13 @@ add_executable(rux
         Include/Rux/Linker.h
 )
 
+if (USE_LLVM_BACKEND)
+    target_sources(rux PRIVATE
+        Source/LLVM.cpp
+        Include/Rux/LLVM.h
+    )
+endif ()
+
 target_include_directories(rux PRIVATE
         Include
         ${CMAKE_CURRENT_BINARY_DIR}/generated
@@ -52,6 +86,10 @@ target_include_directories(rux PRIVATE
 
 if (WIN32)
     target_link_libraries(rux PRIVATE Psapi Winhttp)
+endif ()
+
+if (USE_LLVM_BACKEND)
+    target_link_libraries(rux PRIVATE ${llvm_libs})
 endif ()
 
 set_property(TARGET rux

@@ -53,6 +53,16 @@ Here’s how you can get involved:
 - A C++26-capable compiler (e.g. Clang 19+, GCC 14+, MSVC 2022+)
 - A build tool supported by CMake, such as Ninja, Make, or MSBuild
 
+### Optional: LLVM Backend
+
+To build with the LLVM backend (for multi-architecture support and optimizations):
+
+- [LLVM](https://llvm.org/) 19 or later
+- LLVM development libraries and headers
+- On Ubuntu/Debian: `sudo apt install llvm-19-dev libllvm-19-dev`
+- On macOS: `brew install llvm@19`
+- On Windows: Download LLVM from [llvm.org](https://llvm.org/) and set `LLVM_DIR` environment variable
+
 ### Clone
 
 ```sh
@@ -67,6 +77,15 @@ Use this configuration when `clang++` is available on your `PATH`.
 ```sh
 cmake -S . -B build/clang -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_BUILD_TYPE=Release
 cmake --build build/clang --config Release
+```
+
+### Build with LLVM Backend
+
+To enable the LLVM backend for multi-architecture support and optimizations:
+
+```sh
+cmake -S . -B build/llvm -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_BUILD_TYPE=Release -DUSE_LLVM_BACKEND=ON
+cmake --build build/llvm --config Release
 ```
 
 If you use Ninja explicitly:
