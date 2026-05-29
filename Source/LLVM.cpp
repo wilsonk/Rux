@@ -926,12 +926,12 @@ namespace Rux {
             return "link.exe";
         } else if (targetTriple.find("apple") != std::string::npos ||
                    targetTriple.find("darwin") != std::string::npos) {
-            return "cc";
+            return "clang++";
         } else {
-            return "cc";
+            return "clang++";
         }
 #else
-        return "cc";
+        return "clang++";
 #endif
     }
 
