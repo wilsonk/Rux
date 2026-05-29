@@ -607,5 +607,77 @@ namespace Rux {
         builder->CreateBr(defaultIt->second);
         return true;
     }
+
+    bool LLVM::TranslateFunction(const LirFunc& func) {
+        // Clear value map for this function
+        valueMap.clear();
+
+        // Create function type
+        std::vector<llvm::Type*> paramTypes;
+        for (const auto& param : func.params) {
+            llvm::Type* paramType = typeMapper->MapType(param.type);
+            if (!paramType) return false;
+            paramTypes.push_back(paramType);
+        }
+
+        llvm::Type* returnType = typeMapper->MapType(func.returnType);
+        if (!returnType) return false;
+
+        llvm::FunctionType* funcType = llvm::FunctionType::get(returnType, paramTypes, false);
+
+        // Create function
+        llvm::Function* llvmFunc = llvm::Function::Create(
+            funcType,
+            func.isExtern ? llvm::GlobalValue::ExternalLinkage : llvm::GlobalValue::PrivateLinkage,
+            func.name,
+            module.get()
+        );
+
+        // Set calling convention
+        llvmFunc->setCallingConv(typeMapper->MapCallingConvention(func.callConv));
+
+        // For extern functions, we're done
+        if (func.isExtern) {
+            return true;
+        }
+
+        // Create basic blocks
+        std::unordered_map<std::uint32_t, llvm::BasicBlock*> blockMap;
+        for (size_t i = 0; i < func.blocks.size(); ++i) {
+            const auto& block = func.blocks[i];
+            llvm::BasicBlock* bb = llvm::BasicBlock::Create(*context, block.label, llvmFunc);
+            blockMap[static_cast<std::uint32_t>(i)] = bb;
+        }
+
+        // Translate each block
+        for (size_t i = 0; i < func.blocks.size(); ++i) {
+            const auto& block = func.blocks[i];
+            llvm::BasicBlock* bb = blockMap[static_cast<std::uint32_t>(i)];
+            builder->SetInsertPoint(bb);
+
+            if (!TranslateBlock(block, blockMap)) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    bool LLVM::TranslateBlock(const LirBlock& block, const std::unordered_map<std::uint32_t, llvm::BasicBlock*>& blockMap) {
+        // Translate instructions
+        for (const auto& instr : block.instrs) {
+            llvm::Value* result = TranslateInstruction(instr);
+            if (instr.dst != LirNoReg) {
+                valueMap[instr.dst] = result;
+            }
+        }
+
+        // Translate terminator
+        if (block.term) {
+            return TranslateTerminator(*block.term, blockMap);
+        }
+
+        return true;
+    }
 #endif
 } // namespace Rux

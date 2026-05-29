@@ -119,6 +119,9 @@ namespace Rux {
         [[nodiscard]] bool TranslateBranch(const LirTerminator& term, const std::unordered_map<std::uint32_t, llvm::BasicBlock*>& blockMap);
         [[nodiscard]] bool TranslateReturn(const LirTerminator& term);
         [[nodiscard]] bool TranslateSwitch(const LirTerminator& term, const std::unordered_map<std::uint32_t, llvm::BasicBlock*>& blockMap);
+
+        [[nodiscard]] bool TranslateFunction(const LirFunc& func);
+        [[nodiscard]] bool TranslateBlock(const LirBlock& block, const std::unordered_map<std::uint32_t, llvm::BasicBlock*>& blockMap);
 #endif
     };
 } // namespace Rux
