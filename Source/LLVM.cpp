@@ -576,7 +576,7 @@ namespace Rux {
         if (!baseType->isPointerTy()) return nullptr;
 
         llvm::PointerType* ptrType = llvm::cast<llvm::PointerType>(baseType);
-        llvm::StructType* structType = llvm::dyn_cast<llvm::StructType>(ptrType->getElementType());
+        llvm::StructType* structType = llvm::dyn_cast<llvm::StructType>(ptrType->getNonOpaquePointerElementType());
         if (!structType) return nullptr;
 
         return builder->CreateStructGEP(structType, base, fieldIndex, "fieldptr");
@@ -593,7 +593,7 @@ namespace Rux {
         if (!baseType->isPointerTy()) return nullptr;
 
         llvm::PointerType* ptrType = llvm::cast<llvm::PointerType>(baseType);
-        return builder->CreateGEP(ptrType->getElementType(), base, idx, "indexptr");
+        return builder->CreateGEP(ptrType->getNonOpaquePointerElementType(), base, idx, "indexptr");
     }
 
     llvm::Value* LLVM::TranslatePhi(const LirInstr& instr) {
