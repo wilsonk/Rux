@@ -570,7 +570,12 @@ namespace Rux {
         if (!base) return nullptr;
 
         // TODO: Parse field index from strArg
-        uint32_t fieldIndex = std::stoul(instr.strArg);
+        uint32_t fieldIndex = 0;
+        try {
+            fieldIndex = std::stoul(instr.strArg);
+        } catch (const std::exception&) {
+            return nullptr;
+        }
 
         llvm::Type* baseType = base->getType();
         if (!baseType->isPointerTy()) return nullptr;
