@@ -19,7 +19,11 @@
 #include <llvm/IR/LegacyPassManager.h>
 #include <llvm/Support/FileSystem.h>
 #include <llvm/Support/raw_ostream.h>
+#if LLVM_VERSION_MAJOR >= 22
+#include <llvm/TargetParser/Host.h>
+#else
 #include <llvm/Support/Host.h>
+#endif
 #include <llvm/MC/MCAsmInfo.h>
 #include <llvm/MC/MCContext.h>
 #include <llvm/MC/MCInstrInfo.h>
@@ -143,11 +147,16 @@ namespace Rux {
         if (!elementType) return nullptr;
 
         // Slice is { pointer, length } - 16 bytes on 64-bit
-        llvm::Type* fields[] = {
-            llvm::PointerType::get(context, 0),
-            llvm::Type::getInt64Ty(context)
-        };
-        return llvm::StructType::create(context, fields, "slice");
+        // Cache the slice type to ensure consistency across uses
+        static llvm::StructType* sliceType = nullptr;
+        if (!sliceType) {
+            llvm::Type* fields[] = {
+                llvm::PointerType::get(context, 0),
+                llvm::Type::getInt64Ty(context)
+            };
+            sliceType = llvm::StructType::create(context, fields, "slice");
+        }
+        return sliceType;
     }
 
     llvm::Type* LLVMTypeMapper::MapRangeType(const TypeRef& type) {
@@ -899,6 +908,16 @@ namespace Rux {
                 paramTypes.push_back(srcVal->getType());
             }
 
+            // Fix return type for known external functions that use different signatures
+            // WriteFile/ReadFile return long (i64) not bool (i8)
+            if (instr.strArg == "WriteFile" || instr.strArg == "ReadFile") {
+                retType = llvm::Type::getInt64Ty(*context);
+            }
+            // GetStdHandle returns int (i32) to match Rux source declaration
+            if (instr.strArg == "GetStdHandle") {
+                retType = llvm::Type::getInt32Ty(*context);
+            }
+
             llvm::FunctionType* funcType = llvm::FunctionType::get(retType, paramTypes, false);
             callee = llvm::Function::Create(
                 funcType,
@@ -986,22 +1005,65 @@ namespace Rux {
         }
 
         // With opaque pointers, we need to know the element type
-        // For now, use the instruction type to infer the struct type
-        llvm::Type* elementType = typeMapper->MapType(instr.type);
-        if (!elementType) {
-            fprintf(stderr, "      FieldPtr instruction: failed to map element type (kind=%d, name='%s')\n", (int)instr.type.kind, instr.type.name.c_str());
+        // The base pointer should point to a struct (e.g., slice)
+        // For slice field access (data/length), use the slice type from typeMapper
+        llvm::Type* basePointeeType = nullptr;
+        
+        // Check if this is a slice field access
+        if (instr.strArg == "data" || instr.strArg == "length") {
+            // Use the slice type from typeMapper to ensure consistency
+            if (instr.type.kind == TypeRef::Kind::Slice) {
+                basePointeeType = typeMapper->MapType(instr.type);
+            } else if (instr.type.kind == TypeRef::Kind::Pointer && !instr.type.inner.empty()) {
+                // If the instruction type is a pointer, the base might point to a slice
+                // Try to construct a slice type from the inner type
+                TypeRef sliceType = TypeRef::MakeSlice(instr.type.inner[0]);
+                basePointeeType = typeMapper->MapType(sliceType);
+            }
+            if (!basePointeeType) {
+                // Fallback: create a generic slice type
+                llvm::Type* fields[] = {
+                    llvm::PointerType::get(*context, 0),
+                    llvm::Type::getInt64Ty(*context)
+                };
+                basePointeeType = llvm::StructType::create(*context, fields, "slice");
+            }
+        } else {
+            // Use the instruction type's inner type if it's a pointer
+            if (instr.type.kind == TypeRef::Kind::Pointer && !instr.type.inner.empty()) {
+                basePointeeType = typeMapper->MapType(instr.type.inner[0]);
+            } else {
+                basePointeeType = typeMapper->MapType(instr.type);
+            }
+        }
+        
+        if (!basePointeeType) {
+            fprintf(stderr, "      FieldPtr instruction: failed to map base pointee type (kind=%d, name='%s')\n", (int)instr.type.kind, instr.type.name.c_str());
             return nullptr;
         }
 
-        llvm::StructType* structType = llvm::dyn_cast<llvm::StructType>(elementType);
+        llvm::StructType* structType = llvm::dyn_cast<llvm::StructType>(basePointeeType);
         if (!structType) {
             // If the type is opaque, we can't use CreateStructGEP
             // Fall back to a simple GEP with index
+            // LLVM 22+ requires the actual struct type for GEP on opaque pointers
+#if LLVM_VERSION_MAJOR >= 22
+            fprintf(stderr, "      FieldPtr instruction: element type is not a struct, using byte offset\n");
+            // Cast to i8* and use byte offset calculation
+            llvm::Type* i8Ptr = llvm::PointerType::get(*context, 0);
+            llvm::Value* i8Base = builder->CreateBitCast(base, i8Ptr, "fieldptr_cast");
+            // For now, assume 8-byte aligned fields (simplified)
+            llvm::Value* byteOffset = llvm::ConstantInt::get(llvm::Type::getInt64Ty(*context), fieldIndex * 8);
+            return builder->CreateGEP(llvm::Type::getInt8Ty(*context), i8Base, byteOffset, "fieldptr");
+#else
             fprintf(stderr, "      FieldPtr instruction: element type is not a struct, using GEP with index %u\n", fieldIndex);
             llvm::Value* idx = llvm::ConstantInt::get(llvm::Type::getInt32Ty(*context), fieldIndex);
-            return builder->CreateGEP(elementType, base, idx, "fieldptr");
+            return builder->CreateGEP(basePointeeType, base, idx, "fieldptr");
+#endif
         }
 
+        // Use CreateStructGEP for struct types
+        // For LLVM 22+, CreateStructGEP works with opaque pointers
         return builder->CreateStructGEP(structType, base, fieldIndex, "fieldptr");
     }
 
@@ -1210,6 +1272,12 @@ namespace Rux {
         // For main function, ensure it returns i32 for C compatibility
         if (funcName == "main" && returnType->isIntegerTy(64)) {
             returnType = llvm::Type::getInt32Ty(*context);
+        }
+
+        // Fix return type for known external functions that use different signatures
+        // WriteFile/ReadFile return long (i64) not bool (i8)
+        if (func.isExtern && (funcName == "WriteFile" || funcName == "ReadFile")) {
+            returnType = llvm::Type::getInt64Ty(*context);
         }
 
         llvm::FunctionType* funcType = llvm::FunctionType::get(returnType, paramTypes, false);
@@ -1578,14 +1646,14 @@ namespace Rux {
                 cmd += " " + obj.string();
             }
             cmd += " kernel32.lib user32.lib";
-        } else if (linker == "ld64") {
-            // macOS linker
+        } else if (targetTriple.find("apple") != std::string::npos ||
+                   targetTriple.find("darwin") != std::string::npos) {
+            // macOS - use clang as linker driver
             cmd += " -o " + outputPath.string();
             for (const auto& obj : objectFiles) {
                 cmd += " " + obj.string();
             }
             cmd += " -lSystem";
-            // TODO: Add -syslibroot with xcrun
         } else {
             // Linux/BSD - use cc as linker driver
             cmd += " -o " + outputPath.string();

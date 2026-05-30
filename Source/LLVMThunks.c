@@ -15,7 +15,8 @@
 // -10: STD_INPUT_HANDLE  -> returns 0 (stdin)
 // -11: STD_OUTPUT_HANDLE -> returns 1 (stdout)
 // -12: STD_ERROR_HANDLE  -> returns 2 (stderr)
-long GetStdHandle(long handle) {
+// Returns int to match Rux source declaration
+int GetStdHandle(int handle) {
     if (handle == -10) return 0;  // STD_INPUT_HANDLE
     if (handle == -11) return 1;  // STD_OUTPUT_HANDLE
     if (handle == -12) return 2;  // STD_ERROR_HANDLE
@@ -24,8 +25,8 @@ long GetStdHandle(long handle) {
 
 // WriteFile thunk
 // Simplified version that writes to file descriptor
-long WriteFile(long handle, void* buffer, long bytesToWrite, long* bytesWritten, long overlapped) {
-    ssize_t result = write((int)handle, buffer, (size_t)bytesToWrite);
+long WriteFile(int handle, void* buffer, long bytesToWrite, long* bytesWritten, long overlapped) {
+    ssize_t result = write(handle, buffer, (size_t)bytesToWrite);
     if (bytesWritten) *bytesWritten = (long)result;
     return result > 0 ? 1 : 0;
 }
