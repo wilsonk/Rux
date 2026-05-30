@@ -596,9 +596,10 @@ namespace Rux {
                     llvm::Function* powFunc = llvm::Intrinsic::getOrInsertDeclaration(module.get(), llvm::Intrinsic::pow, {type});
                     return builder->CreateCall(powFunc, {lhs, rhs}, "pow");
                 } else if (type->isIntegerTy()) {
-                    // For integers, use libm pow by converting to double
-                    // TODO: Implement proper integer power without floating-point conversion
-                    fprintf(stderr, "      BinaryOp Pow: integer power not yet implemented (requires libm)\n");
+                    // Integer power not yet implemented due to LLVM instruction selector constraints
+                    // The custom backend uses __rux_ipow helper, but LLVM's selector has issues with
+                    // the generated IR for integer power algorithms (type conversion, loops, etc.)
+                    fprintf(stderr, "      BinaryOp Pow: integer power not yet implemented (LLVM selector constraint)\n");
                     return nullptr;
                 } else {
                     fprintf(stderr, "      BinaryOp Pow: unsupported type\n");
