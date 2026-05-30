@@ -11,8 +11,8 @@ if (USE_LLVM_BACKEND)
     find_package(LLVM CONFIG REQUIRED)
     message(STATUS "Found LLVM ${LLVM_PACKAGE_VERSION}")
     message(STATUS "Using LLVMConfig.cmake in: ${LLVM_DIR}")
+    message(STATUS "LLVM include dirs: ${LLVM_INCLUDE_DIRS}")
 
-    include_directories(${LLVM_INCLUDE_DIRS})
     add_definitions(${LLVM_DEFINITIONS})
     add_definitions(-DUSE_LLVM_BACKEND)
 
@@ -64,9 +64,13 @@ add_executable(rux
 if (USE_LLVM_BACKEND)
     target_sources(rux PRIVATE
         Source/LLVM.cpp
-        Source/LLVMThunks.c
         Include/Rux/LLVM.h
     )
+    target_include_directories(rux PRIVATE ${LLVM_INCLUDE_DIRS})
+    target_link_libraries(rux PRIVATE ${llvm_libs})
+    if (NOT WIN32)
+        target_sources(rux PRIVATE Source/LLVMThunks.c)
+    endif ()
 endif ()
 
 target_include_directories(rux PRIVATE
@@ -76,10 +80,6 @@ target_include_directories(rux PRIVATE
 
 if (WIN32)
     target_link_libraries(rux PRIVATE Psapi Winhttp)
-endif ()
-
-if (USE_LLVM_BACKEND)
-    target_link_libraries(rux PRIVATE ${llvm_libs})
 endif ()
 
 set_property(TARGET rux

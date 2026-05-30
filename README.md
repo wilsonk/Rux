@@ -88,6 +88,22 @@ cmake -S . -B build/llvm -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_BUILD_TYPE=Release
 cmake --build build/llvm --config Release
 ```
 
+**Windows with MinGW and LLVM:**
+
+If you have LLVM installed via MSYS2/MinGW, you can build with the LLVM backend using:
+
+```sh
+cmake -S . -B build/mingw -G Ninja -DUSE_LLVM_BACKEND=ON -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_C_COMPILER=clang -DCMAKE_BUILD_TYPE=Release -DLLVM_DIR=C:/msys64/mingw64/lib/cmake/llvm
+cmake --build build/mingw --config=Release
+```
+
+**Note:** If you have multiple LLVM installations in your PATH (e.g., from MSYS2/MinGW and a separate LLVM installer), the Windows DLL loader may load the wrong LLVM DLL. To fix this, ensure MinGW64 bin is prioritized in your PATH when running the executable:
+
+```sh
+export PATH=/c/msys64/mingw64/bin:$PATH
+./build/mingw/rux.exe help
+```
+
 If you use Ninja explicitly:
 
 ```sh

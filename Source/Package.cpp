@@ -5,6 +5,7 @@
 */
 
 #include "Rux/Package.h"
+#include "Rux/Print.h"
 
 #include "Rux/Manifest.h"
 
@@ -54,13 +55,13 @@ namespace Rux {
 
     bool ScaffoldPackage(const fs::path& root, const std::string& name, const PackageType type, const bool initMode) {
         if (!initMode && fs::exists(root)) {
-            std::println(stderr, "error: directory '{}' already exists", root.string());
+            Rux::println(stderr, "error: directory '{}' already exists", root.string());
             return false;
         }
 
         auto run_task = [](auto&& task_result) -> bool {
             if (!task_result) {
-                std::println(stderr, "error: {}", task_result.error());
+                Rux::println(stderr, "error: {}", task_result.error());
                 return false;
             }
             return true;
@@ -75,7 +76,7 @@ namespace Rux {
             Manifest m;
             m.package = {.name = name, .version = "0.1.0", .type = (type == PackageType::Executable ? "bin" : "lib")};
             if (!m.Save(tomlPath)) {
-                std::println(stderr, "error: cannot write Rux.toml");
+                Rux::println(stderr, "error: cannot write Rux.toml");
                 return false;
             }
         }

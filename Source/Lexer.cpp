@@ -5,6 +5,7 @@
 */
 
 #include "Rux/Lexer.h"
+#include "Rux/Print.h"
 
 #include <cassert>
 #include <cctype>
@@ -30,13 +31,13 @@ namespace Rux {
     std::optional<LexerResult> Lexer::FromFile(const std::filesystem::path& path) {
         std::ifstream f(path, std::ios::binary);
         if (!f) {
-            std::print(stderr, "error: cannot open '{}'\n", path.string());
+            Rux::print(stderr, "error: cannot open '{}'\n", path.string());
             return std::nullopt;
         }
         std::ostringstream ss;
         ss << f.rdbuf();
         if (!f && !f.eof()) {
-            std::print(stderr, "error: failed to read '{}'\n", path.string());
+            Rux::print(stderr, "error: failed to read '{}'\n", path.string());
             return std::nullopt;
         }
         Lexer lex(ss.str(), path.string());
@@ -59,7 +60,7 @@ namespace Rux {
         std::ofstream f(path);
         if (!f) return false;
         for (const auto& tok : result.tokens) {
-            std::print(f,
+            Rux::print(f,
                        "{:>4}:{:<4}  {:<16}  {}\n",
                        tok.location.line,
                        tok.location.column,
@@ -67,9 +68,9 @@ namespace Rux {
                        tok.text);
         }
         if (!result.diagnostics.empty()) {
-            std::print(f, "\n--- diagnostics ---\n");
+            Rux::print(f, "\n--- diagnostics ---\n");
             for (const auto& d : result.diagnostics) {
-                std::print(f,
+                Rux::print(f,
                            "{:>4}:{:<4}  {}  {}\n",
                            d.location.line,
                            d.location.column,

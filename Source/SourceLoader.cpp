@@ -5,6 +5,7 @@
 */
 
 #include "Rux/SourceLoader.h"
+#include "Rux/Print.h"
 
 #include <algorithm>
 #include <fstream>
@@ -15,16 +16,16 @@ namespace Rux {
     std::optional<SourceLoadResult> SourceLoader::Load(const std::filesystem::path& manifestDir) {
         const auto srcDir = manifestDir / "Src";
         if (!std::filesystem::exists(srcDir)) {
-            std::print(stderr, "error: source directory '{}' does not exist\n", srcDir.string());
+            Rux::print(stderr, "error: source directory '{}' does not exist\n", srcDir.string());
             return std::nullopt;
         }
         if (!std::filesystem::is_directory(srcDir)) {
-            std::print(stderr, "error: '{}' is not a directory\n", srcDir.string());
+            Rux::print(stderr, "error: '{}' is not a directory\n", srcDir.string());
             return std::nullopt;
         }
         const auto paths = CollectSourcePaths(srcDir);
         if (paths.empty()) {
-            std::print(stderr, "warning: no *.rux files found under '{}'\n", srcDir.string());
+            Rux::print(stderr, "warning: no *.rux files found under '{}'\n", srcDir.string());
         }
         SourceLoadResult result;
         for (const auto& path : paths) {

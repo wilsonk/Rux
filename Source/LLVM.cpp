@@ -19,7 +19,7 @@
 #include <llvm/IR/LegacyPassManager.h>
 #include <llvm/Support/FileSystem.h>
 #include <llvm/Support/raw_ostream.h>
-#if LLVM_VERSION_MAJOR >= 22
+#if LLVM_VERSION_MAJOR >= 21
 #include <llvm/TargetParser/Host.h>
 #else
 #include <llvm/Support/Host.h>
