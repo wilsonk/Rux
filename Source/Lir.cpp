@@ -360,6 +360,17 @@ namespace Rux {
             i.op = LirOpcode::FieldPtr;
             i.type = TypeRef::MakePointer(elemType);
             i.srcs = {base};
+
+            // If field name is empty, try to infer it from the element type
+            // For slices: "data" for pointer types, "length" for uint64
+            if (field.empty()) {
+                if (elemType.kind == TypeRef::Kind::Pointer) {
+                    field = "data";
+                } else if (elemType.kind == TypeRef::Kind::UInt64) {
+                    field = "length";
+                }
+            }
+
             i.strArg = std::move(field);
             Emit(std::move(i));
             return ptr;
@@ -1124,8 +1135,15 @@ namespace Rux {
                 return EmitLoad(ptr, e->type);
             }
             if (auto* e = dynamic_cast<const HirFieldExpr*>(&expr)) {
-                LirReg base =
-                    e->object->type.kind == TypeRef::Kind::Pointer ? LowerExpr(*e->object) : LowerLValue(*e->object);
+                LirReg base;
+                if (e->object->type.kind == TypeRef::Kind::Pointer) {
+                    base = LowerExpr(*e->object);
+                } else if (IsSliceType(e->object->type)) {
+                    // For slice types, we need the lvalue (pointer to slice)
+                    base = LowerLValue(*e->object);
+                } else {
+                    base = LowerLValue(*e->object);
+                }
                 LirReg ptr = EmitFieldPtr(base, e->field, e->type);
                 return EmitLoad(ptr, e->type);
             }
@@ -1665,7 +1683,7 @@ namespace Rux {
         }
 
         LirReg LowerSliceDataPtr(const HirExpr& object, const TypeRef& elemType) {
-            if (!IsSliceType(object.type)) return LowerExpr(object);
+            if (!IsSliceType(object.type)) return LowerLValue(object);
             LirReg slicePtr = LowerLValue(object);
             LirReg dataField = EmitFieldPtr(slicePtr, "data", TypeRef::MakePointer(elemType));
             return EmitLoad(dataField, TypeRef::MakePointer(elemType));
@@ -1675,7 +1693,17 @@ namespace Rux {
         LirReg LowerLValue(const HirExpr& expr) {
             if (auto* e = dynamic_cast<const HirVarExpr*>(&expr)) {
                 auto it = locals.find(e->name);
-                if (it != locals.end()) return it->second;
+                if (it != locals.end()) {
+                    LirReg reg = it->second;
+                    // If this is a parameter (reg < param count) and it's a slice/struct type,
+                    // we need to alloca it to get an address
+                    if (reg < fn->params.size() && (IsSliceType(e->type) || e->type.kind == TypeRef::Kind::Named)) {
+                        LirReg slot = EmitAlloca(e->type);
+                        EmitStore(reg, slot, e->type);
+                        return slot;
+                    }
+                    return reg;
+                }
                 // Global variable address.
                 LirReg ptr = NewReg();
                 LirInstr i;
@@ -1705,8 +1733,15 @@ namespace Rux {
                 return slot;
             }
             if (auto* e = dynamic_cast<const HirFieldExpr*>(&expr)) {
-                LirReg base =
-                    e->object->type.kind == TypeRef::Kind::Pointer ? LowerExpr(*e->object) : LowerLValue(*e->object);
+                LirReg base;
+                if (e->object->type.kind == TypeRef::Kind::Pointer) {
+                    base = LowerExpr(*e->object);
+                } else if (IsSliceType(e->object->type)) {
+                    // For slice types, we need the lvalue (pointer to slice)
+                    base = LowerLValue(*e->object);
+                } else {
+                    base = LowerLValue(*e->object);
+                }
                 return EmitFieldPtr(base, e->field, e->type);
             }
 

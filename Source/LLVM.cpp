@@ -859,8 +859,8 @@ namespace Rux {
         llvm::Type* baseType = base->getType();
         if (!baseType->isPointerTy()) {
             // If base is not a pointer, this is likely a bug in LIR generation
-            // For now, skip this instruction to avoid segfault
-            fprintf(stderr, "      FieldPtr instruction: base is not a pointer, skipping (LIR bug?)\n");
+            // Skip this instruction to avoid segfault
+            fprintf(stderr, "      FieldPtr instruction: base is not a pointer, skipping (LIR bug)\n");
             return nullptr;
         }
 
