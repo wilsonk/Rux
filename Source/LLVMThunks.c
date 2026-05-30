@@ -58,3 +58,18 @@ long HeapFree(long heapHandle, long flags, void* ptr) {
     }
     return 0; // Failure
 }
+
+// Integer power function for LLVM backend
+// Implements base^exp using exponentiation by squaring
+// Note: This function is not currently used due to LLVM instruction selector constraints
+long long __rux_ipow(long long base, long long exp) {
+    long long result = 1;
+    while (exp > 0) {
+        if (exp % 2 == 1) {
+            result *= base;
+        }
+        base *= base;
+        exp /= 2;
+    }
+    return result;
+}
