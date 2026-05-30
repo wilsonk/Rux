@@ -591,7 +591,18 @@ namespace Rux {
             case LirOpcode::Shr:
                 return builder->CreateAShr(lhs, rhs, "shr");
             case LirOpcode::Pow:
-                // TODO: Implement pow (may need runtime call)
+                if (type->isFloatingPointTy()) {
+                    // Use LLVM's pow intrinsic for floating-point
+                    llvm::Function* powFunc = llvm::Intrinsic::getOrInsertDeclaration(module.get(), llvm::Intrinsic::pow, {type});
+                    return builder->CreateCall(powFunc, {lhs, rhs}, "pow");
+                } else if (type->isIntegerTy()) {
+                    // For integers, use libm pow by converting to double
+                    // TODO: Implement proper integer power without floating-point conversion
+                    fprintf(stderr, "      BinaryOp Pow: integer power not yet implemented (requires libm)\n");
+                    return nullptr;
+                } else {
+                    fprintf(stderr, "      BinaryOp Pow: unsupported type\n");
+                }
                 break;
             default:
                 break;
