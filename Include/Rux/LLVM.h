@@ -147,6 +147,7 @@ namespace Rux {
         [[nodiscard]] bool TranslateUnionDecl(const LirUnionDecl& decl);
         [[nodiscard]] bool TranslateConstDecl(const LirConstDecl& decl);
         [[nodiscard]] bool TranslateExternVar(const LirExternVar& var);
+        [[nodiscard]] bool TranslateVtable(const LirVtable& vtable);
         [[nodiscard]] bool TranslateModule(const LirModule& mod);
 #endif
     };

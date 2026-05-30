@@ -7,6 +7,7 @@
     These provide Windows API compatibility on Linux/macOS
 */
 
+#include <stdlib.h>
 #include <unistd.h>
 #include <sys/syscall.h>
 
@@ -35,4 +36,25 @@ long ReadFile(long handle, void* buffer, long bytesToRead, long* bytesRead, long
     ssize_t result = read((int)handle, buffer, (size_t)bytesToRead);
     if (bytesRead) *bytesRead = (long)result;
     return result > 0 ? 1 : 0;
+}
+
+// Memory allocation thunks
+// These provide Windows HeapAlloc/HeapFree compatibility
+// Note: These are simple wrappers around malloc/free
+// For production use, you might want to use a custom allocator
+
+void* HeapAlloc(long heapHandle, long flags, long size) {
+    (void)heapHandle; // Unused - we use the system heap
+    (void)flags;     // Unused - no special allocation flags
+    return malloc((size_t)size);
+}
+
+long HeapFree(long heapHandle, long flags, void* ptr) {
+    (void)heapHandle; // Unused - we use the system heap
+    (void)flags;     // Unused
+    if (ptr) {
+        free(ptr);
+        return 1; // Success
+    }
+    return 0; // Failure
 }

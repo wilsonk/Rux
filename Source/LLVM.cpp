@@ -37,10 +37,15 @@ namespace Rux {
     }
 
     llvm::Type* LLVMTypeMapper::MapType(const TypeRef& type) {
+        // fprintf(stderr, "        Mapping type: kind=%d, name='%s'\n", (int)type.kind, type.name.c_str());
         switch (type.kind) {
             case TypeRef::Kind::Unknown:
-            case TypeRef::Kind::Opaque:
+                fprintf(stderr, "        Unknown type\n");
                 return nullptr;
+            case TypeRef::Kind::Opaque:
+                // Opaque types are treated as opaque pointers (i8*)
+                fprintf(stderr, "        Opaque type - treating as i8*\n");
+                return llvm::PointerType::get(context, 0);
 
             // Primitive types
             case TypeRef::Kind::Bool8:
@@ -102,6 +107,7 @@ namespace Rux {
                 return llvm::PointerType::get(context, 0);
 
             default:
+                fprintf(stderr, "        Unknown type kind: %d\n", (int)type.kind);
                 return nullptr;
         }
     }
@@ -266,17 +272,24 @@ namespace Rux {
 #ifdef USE_LLVM_BACKEND
         std::vector<std::filesystem::path> objectFiles;
 
+        if (lir.modules.empty()) {
+            fprintf(stderr, "error: no modules in LIR package\n");
+            return {};
+        }
+
         // Translate all modules in the package
         for (const auto& mod : lir.modules) {
+            // fprintf(stderr, "Translating module: %s\n", mod.name.c_str());
             if (!const_cast<LLVM*>(this)->TranslateModule(mod)) {
-                // TODO: Handle error
+                fprintf(stderr, "error: failed to translate module '%s'\n", mod.name.c_str());
                 return {};
             }
 
             // Generate object file for this module
             std::filesystem::path objectPath = mod.name + GetObjectFileExtension();
+            // fprintf(stderr, "Emitting object file: %s\n", objectPath.string().c_str());
             if (!EmitObjectFile(objectPath)) {
-                // TODO: Handle error
+                fprintf(stderr, "error: failed to emit object file '%s'\n", objectPath.string().c_str());
                 return {};
             }
 
@@ -590,13 +603,111 @@ namespace Rux {
 
         llvm::Type* srcType = src->getType();
 
-        // TODO: Implement proper cast based on src and dst types
-        // For now, use bitcast as a simple fallback
-        return builder->CreateBitCast(src, dstType, "cast");
+        // Implement proper cast based on src and dst types
+        if (srcType->isIntegerTy() && dstType->isIntegerTy()) {
+            // Integer to integer cast
+            unsigned srcBits = srcType->getIntegerBitWidth();
+            unsigned dstBits = dstType->getIntegerBitWidth();
+
+            if (srcBits < dstBits) {
+                // Sign-extend or zero-extend
+                // For now, use sign-extend
+                return builder->CreateSExt(src, dstType, "cast");
+            } else if (srcBits > dstBits) {
+                // Truncate
+                return builder->CreateTrunc(src, dstType, "cast");
+            } else {
+                // Same size, can use bitcast
+                return builder->CreateBitCast(src, dstType, "cast");
+            }
+        }
+
+        if (srcType->isPointerTy() && dstType->isIntegerTy()) {
+            // Pointer to integer
+            return builder->CreatePtrToInt(src, dstType, "cast");
+        }
+
+        if (srcType->isIntegerTy() && dstType->isPointerTy()) {
+            // Integer to pointer
+            return builder->CreateIntToPtr(src, dstType, "cast");
+        }
+
+        if (srcType->isPointerTy() && dstType->isPointerTy()) {
+            // Pointer to pointer
+            return builder->CreateBitCast(src, dstType, "cast");
+        }
+
+        if (srcType->isFloatTy() || srcType->isDoubleTy()) {
+            if (dstType->isIntegerTy()) {
+                // Float to integer
+                return builder->CreateFPToSI(src, dstType, "cast");
+            }
+            if (dstType->isFloatTy() || dstType->isDoubleTy()) {
+                // Float to float
+                if (srcType->getScalarSizeInBits() < dstType->getScalarSizeInBits()) {
+                    return builder->CreateFPExt(src, dstType, "cast");
+                } else {
+                    return builder->CreateFPTrunc(src, dstType, "cast");
+                }
+            }
+        }
+
+        if (dstType->isFloatTy() || dstType->isDoubleTy()) {
+            if (srcType->isIntegerTy()) {
+                // Integer to float
+                return builder->CreateSIToFP(src, dstType, "cast");
+            }
+        }
+
+        // Fallback to bitcast for same-size types
+        if (srcType->getScalarSizeInBits() == dstType->getScalarSizeInBits()) {
+            return builder->CreateBitCast(src, dstType, "cast");
+        }
+
+        fprintf(stderr, "error: unsupported cast\n");
+        return nullptr;
     }
 
     llvm::Value* LLVM::TranslateCall(const LirInstr& instr) {
-        // Look up the function by name
+        // Check if this is a direct call or indirect call (function pointer)
+        if (instr.op == LirOpcode::CallIndirect) {
+            // CallIndirect: srcs[0] = function pointer, srcs[1] = data pointer, rest = args
+            if (instr.srcs.size() < 2) return nullptr;
+
+            llvm::Value* fnPtr = valueMap[instr.srcs[0]];
+            if (!fnPtr) return nullptr;
+
+            // Skip data pointer (srcs[1]) for now - it's used for closures
+            llvm::Type* retType = typeMapper->MapType(instr.type);
+            if (!retType) return nullptr;
+
+            // Build function type from arguments (skipping fnPtr and dataPtr)
+            std::vector<llvm::Type*> paramTypes;
+            for (size_t i = 2; i < instr.srcs.size(); ++i) {
+                llvm::Value* srcVal = valueMap[instr.srcs[i]];
+                if (!srcVal) return nullptr;
+                paramTypes.push_back(srcVal->getType());
+            }
+
+            llvm::FunctionType* funcType = llvm::FunctionType::get(retType, paramTypes, false);
+
+            // Cast the function pointer to the correct function type
+            llvm::Type* castFnType = llvm::PointerType::get(*context, 0);
+            llvm::Value* castFnPtr = builder->CreateBitCast(fnPtr, castFnType, "cast_fn");
+
+            // Gather arguments (skipping fnPtr and dataPtr)
+            std::vector<llvm::Value*> args;
+            for (size_t i = 2; i < instr.srcs.size(); ++i) {
+                llvm::Value* srcVal = valueMap[instr.srcs[i]];
+                if (!srcVal) return nullptr;
+                args.push_back(srcVal);
+            }
+
+            // Create the indirect call
+            return builder->CreateCall(funcType, castFnPtr, args, "call_indirect");
+        }
+
+        // Direct call: Look up the function by name
         llvm::Function* callee = module->getFunction(instr.strArg);
         if (!callee) {
             // Function not found in module, might be external
@@ -793,6 +904,8 @@ namespace Rux {
     }
 
     bool LLVM::TranslateFunction(const LirFunc& func) {
+        // fprintf(stderr, "    Translating function: %s (extern=%d, public=%d)\n", func.name.c_str(), func.isExtern, func.isPublic);
+
         // Clear value map for this function
         valueMap.clear();
 
@@ -800,12 +913,18 @@ namespace Rux {
         std::vector<llvm::Type*> paramTypes;
         for (const auto& param : func.params) {
             llvm::Type* paramType = typeMapper->MapType(param.type);
-            if (!paramType) return false;
+            if (!paramType) {
+                fprintf(stderr, "      Failed to map param type\n");
+                return false;
+            }
             paramTypes.push_back(paramType);
         }
 
         llvm::Type* returnType = typeMapper->MapType(func.returnType);
-        if (!returnType) return false;
+        if (!returnType) {
+            fprintf(stderr, "      Failed to map return type\n");
+            return false;
+        }
 
         // Create function
         // Rename Main to main for C compatibility
@@ -838,6 +957,7 @@ namespace Rux {
 
         // For extern functions, we're done
         if (func.isExtern) {
+            // fprintf(stderr, "    External function, skipping body\n");
             return true;
         }
 
@@ -849,6 +969,7 @@ namespace Rux {
             blockMap[static_cast<std::uint32_t>(i)] = bb;
         }
 
+        // fprintf(stderr, "    Translating %zu blocks\n", func.blocks.size());
         // Translate each block
         for (size_t i = 0; i < func.blocks.size(); ++i) {
             const auto& block = func.blocks[i];
@@ -856,6 +977,7 @@ namespace Rux {
             builder->SetInsertPoint(bb);
 
             if (!TranslateBlock(block, blockMap)) {
+                fprintf(stderr, "      Failed to translate block %zu\n", i);
                 return false;
             }
         }
@@ -964,48 +1086,123 @@ namespace Rux {
         return true;
     }
 
+    bool LLVM::TranslateVtable(const LirVtable& vtable) {
+        // Vtable is an array of function pointers
+        // Each entry is a pointer to a function (by name)
+        std::vector<llvm::Constant*> methodPtrs;
+
+        for (const auto& methodName : vtable.methods) {
+            // Look up the function by name
+            llvm::Function* func = module->getFunction(methodName);
+            if (!func) {
+                // Function not found - this might be an external function
+                // For now, skip this entry
+                continue;
+            }
+
+            // Create a constant pointer to the function
+            methodPtrs.push_back(func);
+        }
+
+        if (methodPtrs.empty()) {
+            // Empty vtable, create a null array
+            llvm::ArrayType* vtableType = llvm::ArrayType::get(
+                llvm::PointerType::get(*context, 0),
+                0
+            );
+            llvm::Constant* nullArray = llvm::Constant::getNullValue(vtableType);
+
+            new llvm::GlobalVariable(
+                *module,
+                vtableType,
+                true, // is constant (read-only)
+                llvm::GlobalValue::PrivateLinkage,
+                nullArray,
+                vtable.label
+            );
+
+            return true;
+        }
+
+        // Create array type for the vtable
+        llvm::ArrayType* vtableType = llvm::ArrayType::get(
+            llvm::PointerType::get(*context, 0),
+            methodPtrs.size()
+        );
+
+        // Create constant array of function pointers
+        llvm::Constant* vtableInit = llvm::ConstantArray::get(vtableType, methodPtrs);
+
+        // Create global variable in .rodata
+        new llvm::GlobalVariable(
+            *module,
+            vtableType,
+            true, // is constant (read-only)
+            llvm::GlobalValue::PrivateLinkage,
+            vtableInit,
+            vtable.label
+        );
+
+        return true;
+    }
+
     bool LLVM::TranslateModule(const LirModule& mod) {
+        // fprintf(stderr, "  Translating %zu structs\n", mod.structs.size());
         // Translate type declarations first
         for (const auto& decl : mod.structs) {
             if (!TranslateStructDecl(decl)) {
-                // TODO: Log error
+                fprintf(stderr, "error: failed to translate struct '%s'\n", decl.name.c_str());
                 return false;
             }
         }
 
+        // fprintf(stderr, "  Translating %zu enums\n", mod.enums.size());
         for (const auto& decl : mod.enums) {
             if (!TranslateEnumDecl(decl)) {
-                // TODO: Log error
+                fprintf(stderr, "error: failed to translate enum '%s'\n", decl.name.c_str());
                 return false;
             }
         }
 
+        // fprintf(stderr, "  Translating %zu unions\n", mod.unions.size());
         for (const auto& decl : mod.unions) {
             if (!TranslateUnionDecl(decl)) {
-                // TODO: Log error
+                fprintf(stderr, "error: failed to translate union '%s'\n", decl.name.c_str());
                 return false;
             }
         }
 
         // Translate constants and extern variables
+        // fprintf(stderr, "  Translating %zu constants\n", mod.consts.size());
         for (const auto& decl : mod.consts) {
             if (!TranslateConstDecl(decl)) {
-                // TODO: Log error
+                fprintf(stderr, "error: failed to translate constant '%s'\n", decl.name.c_str());
                 return false;
             }
         }
 
+        // fprintf(stderr, "  Translating %zu extern vars\n", mod.externVars.size());
         for (const auto& var : mod.externVars) {
             if (!TranslateExternVar(var)) {
-                // TODO: Log error
+                fprintf(stderr, "error: failed to translate extern var '%s'\n", var.name.c_str());
                 return false;
             }
         }
 
-        // Translate functions
+        // Translate functions (must be before vtables since vtables reference functions)
+        // fprintf(stderr, "  Translating %zu functions\n", mod.funcs.size());
         for (const auto& func : mod.funcs) {
             if (!TranslateFunction(func)) {
-                // TODO: Log error
+                fprintf(stderr, "error: failed to translate function '%s'\n", func.name.c_str());
+                return false;
+            }
+        }
+
+        // Translate vtables (must be after functions are declared)
+        // fprintf(stderr, "  Translating %zu vtables\n", mod.vtables.size());
+        for (const auto& vtable : mod.vtables) {
+            if (!TranslateVtable(vtable)) {
+                fprintf(stderr, "error: failed to translate vtable '%s'\n", vtable.label.c_str());
                 return false;
             }
         }
