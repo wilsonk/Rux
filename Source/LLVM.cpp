@@ -1619,12 +1619,21 @@ namespace Rux {
     }
 
     std::string LLVM::DetectSystemLinker() const {
+#ifdef _WIN32
+#ifdef __clang__
+        // Windows with Clang/MinGW - use clang as linker driver
+        return "clang++";
+#else
+        // Windows with MSVC - use link.exe
         if (targetTriple.find("windows") != std::string::npos ||
             targetTriple.find("win32") != std::string::npos ||
             targetTriple.find("msvc") != std::string::npos) {
             return "link.exe";
-        } else if (targetTriple.find("apple") != std::string::npos ||
-                   targetTriple.find("darwin") != std::string::npos) {
+        }
+#endif
+#endif
+        if (targetTriple.find("apple") != std::string::npos ||
+            targetTriple.find("darwin") != std::string::npos) {
             return "clang++";
         } else {
             return "clang++";
@@ -1640,12 +1649,19 @@ namespace Rux {
         std::string cmd = linker;
 
         if (linker == "link.exe") {
-            // Windows linker
+            // Windows MSVC linker
             cmd += " /OUT:" + outputPath.string();
             for (const auto& obj : objectFiles) {
                 cmd += " " + obj.string();
             }
             cmd += " kernel32.lib user32.lib";
+        } else if (linker == "clang++" && targetTriple.find("windows") != std::string::npos) {
+            // Windows with Clang/MinGW - use clang as linker driver
+            cmd += " -o " + outputPath.string();
+            for (const auto& obj : objectFiles) {
+                cmd += " " + obj.string();
+            }
+            cmd += " -lkernel32 -luser32";
         } else if (targetTriple.find("apple") != std::string::npos ||
                    targetTriple.find("darwin") != std::string::npos) {
             // macOS - use clang as linker driver
@@ -1674,14 +1690,16 @@ namespace Rux {
         // Create output directory if it doesn't exist
         std::filesystem::create_directories(outputPath.parent_path());
 
-        // Compile and add thunks object file
+        std::vector<std::filesystem::path> allObjectFiles = objectFiles;
+
+        // Compile and add thunks object file (Unix-only)
+#ifndef _WIN32
         std::filesystem::path thunksObj = outputPath.parent_path() / "llvm_thunks.o";
         std::filesystem::path thunksSource = std::filesystem::path(__FILE__).parent_path() / "LLVMThunks.c";
         std::string compileCmd = "clang -c " + thunksSource.string() + " -o " + thunksObj.string();
         std::system(compileCmd.c_str());
-
-        std::vector<std::filesystem::path> allObjectFiles = objectFiles;
         allObjectFiles.push_back(thunksObj);
+#endif
 
         std::string cmd = GenerateLinkerCommand(allObjectFiles, outputPath);
         if (cmd.empty()) {
