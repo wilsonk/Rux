@@ -1119,7 +1119,7 @@ namespace Rux {
 
         // TODO: documentation generator
 
-        if (openAfter && !opts.quiet) Rux::print(std::format_string("     Opening documentation...\n"));
+        if (openAfter && !opts.quiet) Rux::print("     Opening documentation...\n");
 
         return 0;
     }
@@ -1153,7 +1153,7 @@ namespace Rux {
         }
         auto sourceDir = root / "Source";
         if (!std::filesystem::exists(sourceDir)) {
-            if (!opts.quiet) Rux::print(std::format_string("  No source directory found.\n"));
+            if (!opts.quiet) Rux::print("  No source directory found.\n");
             return 0;
         }
         int fileCount = 0;
@@ -1169,7 +1169,7 @@ namespace Rux {
             }
             // TODO: source formatter
         }
-        if (fileCount == 0 && !opts.quiet) Rux::print(std::format_string("  No .rux files found.\n"));
+        if (fileCount == 0 && !opts.quiet) Rux::print("  No .rux files found.\n");
         return 0;
     }
 
@@ -1393,7 +1393,7 @@ namespace Rux {
         if (!packageSpec.empty()) {
             auto [pkgName, pkgVersion] = ParsePackageSpec(packageSpec);
 
-            if (!opts.quiet) Rux::print(std::format_string("     Fetching registry...\n"));
+            if (!opts.quiet) Rux::print("     Fetching registry...\n");
 
             const auto jsonOpt = FetchUrl(std::string(kRegistryUrl));
             if (!jsonOpt) {
@@ -1446,7 +1446,7 @@ namespace Rux {
         }
 
         if (queue.empty()) {
-            if (!opts.quiet) Rux::print(std::format_string("  No registry dependencies to install.\n"));
+            if (!opts.quiet) Rux::print("  No registry dependencies to install.\n");
             return 0;
         }
 
@@ -1541,7 +1541,7 @@ namespace Rux {
             if (dep.path.empty()) toRemove.push_back(DependencyPackageName(dep));
 
         if (toRemove.empty()) {
-            if (!opts.quiet) Rux::print(std::format_string("  No registry dependencies to uninstall.\n"));
+            if (!opts.quiet) Rux::print("  No registry dependencies to uninstall.\n");
             return 0;
         }
 
@@ -1610,7 +1610,7 @@ namespace Rux {
         if (!manifest) return 1;
 
         if (manifest->dependencies.empty()) {
-            if (!opts.quiet) Rux::print(std::format_string("  No dependencies.\n"));
+            if (!opts.quiet) Rux::print("  No dependencies.\n");
             return 0;
         }
 
@@ -1915,7 +1915,7 @@ namespace Rux {
         // TODO: build and run test targets
         Rux::println("Running executable...");
         Rux::println("Release: {}", isRelease);
-        if (!opts.quiet) Rux::print(std::format_string("    Finished running tests\n"));
+        if (!opts.quiet) Rux::print("    Finished running tests\n");
         return 0;
     }
 
@@ -1943,15 +1943,15 @@ namespace Rux {
                     if (entry.is_directory()) pkgDirs.push_back(entry.path());
             }
             if (pkgDirs.empty()) {
-                if (!opts.quiet) Rux::print(std::format_string("  No packages in global cache to update.\n"));
+                if (!opts.quiet) Rux::print("  No packages in global cache to update.\n");
                 return 0;
             }
             int updated = 0;
             for (const auto& pkgDir : pkgDirs) {
                 const std::string pkgName = pkgDir.filename().string();
-                if (!opts.quiet) Rux::print(std::format_string("    Updating {}...\n"), pkgName);
+                if (!opts.quiet) Rux::print("    Updating {}...\n", pkgName);
                 if (!GitPull(pkgDir)) {
-                    Rux::print(stderr, std::format_string("error: failed to update '{}'\n"), pkgName);
+                    Rux::print(stderr, "error: failed to update '{}'\n", pkgName);
                     return 1;
                 }
                 ++updated;
@@ -1977,7 +1977,7 @@ namespace Rux {
         }
 
         if (queue.empty()) {
-            if (!opts.quiet) Rux::print(std::format_string("  No registry dependencies to update.\n"));
+            if (!opts.quiet) Rux::print("  No registry dependencies to update.\n");
             return 0;
         }
 
@@ -2111,8 +2111,8 @@ namespace Rux {
                 }
             }
 
-            Rux::print(std::format_string("  ]\n"));
-            Rux::print(std::format_string("{}\n"), "}");
+            Rux::print("  ]\n");
+            Rux::print("{}\n", "}");
         }
         else {
             Rux::print("Name:     {}\n"
@@ -2123,7 +2123,7 @@ namespace Rux {
                        manifest->package.type);
 
             if (!manifest->dependencies.empty()) {
-                Rux::print(std::format_string("\nDependencies:\n"));
+                Rux::print("\nDependencies:\n");
 
                 for (const auto& dep : manifest->dependencies) {
                     if (!dep.path.empty())
@@ -2544,13 +2544,13 @@ namespace Rux {
         }
 
         if (jsonOutput) {
-            Rux::print(std::format_string("{{\n"));
+            Rux::print("{{\n");
             Rux::print("  \"success\": {},\n", hadErrors ? "false" : "true");
             Rux::print("  \"diagnostics\": [\n");
 
             for (std::size_t i = 0; i < jsonDiags.size(); ++i) {
                 const auto& d = jsonDiags[i];
-                Rux::print(std::format_string("    {{"));
+                Rux::print("    {{");
                 Rux::print("\"file\":\"{}\",", JsonEscape(d.file));
                 Rux::print("\"line\":{},", d.line);
                 Rux::print("\"column\":{},", d.column);
@@ -2560,7 +2560,7 @@ namespace Rux {
             }
 
             Rux::print("  ]\n");
-            Rux::print(std::format_string("}}\n"));
+            Rux::print("}}\n");
         }
 
         return hadErrors ? 1 : 0;
