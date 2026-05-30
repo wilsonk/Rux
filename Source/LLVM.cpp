@@ -213,6 +213,16 @@ namespace Rux {
             return result;
         }
 
+        // String is a special named type that maps to Slice<char32>
+        if (type.name == "String") {
+            TypeRef stringType;
+            stringType.kind = TypeRef::Kind::Slice;
+            stringType.inner.push_back(TypeRef::MakeChar32());
+            llvm::Type* result = MapSliceType(stringType);
+            namedTypeCache[type.name] = result;
+            return result;
+        }
+
         // For now, create an opaque struct type
         // This will be filled in later when we process struct/enum/union declarations
         llvm::StructType* structType = llvm::StructType::create(context, type.name);
@@ -416,16 +426,43 @@ namespace Rux {
 
     llvm::Value* LLVM::TranslateConst(const LirInstr& instr) {
         llvm::Type* llvmType = typeMapper->MapType(instr.type);
-        if (!llvmType) return nullptr;
+        if (!llvmType) {
+            fprintf(stderr, "      Failed to map type for const instruction (kind=%d, name='%s')\n", (int)instr.type.kind, instr.type.name.c_str());
+            return nullptr;
+        }
+
+        // Handle boolean constants
+        if (instr.strArg == "true") {
+            return llvm::ConstantInt::get(llvmType, 1);
+        }
+        if (instr.strArg == "false") {
+            return llvm::ConstantInt::get(llvmType, 0);
+        }
 
         // Parse the literal value from strArg
         // For now, handle simple integer constants
         // TODO: Handle float, string, and other constant types
         if (llvmType->isIntegerTy()) {
-            uint64_t value = std::stoull(instr.strArg);
-            return llvm::ConstantInt::get(llvmType, value);
+            try {
+                uint64_t value = std::stoull(instr.strArg);
+                return llvm::ConstantInt::get(llvmType, value);
+            } catch (const std::exception& e) {
+                fprintf(stderr, "      Failed to parse integer constant '%s': %s\n", instr.strArg.c_str(), e.what());
+                return nullptr;
+            }
         }
 
+        if (llvmType->isFloatTy() || llvmType->isDoubleTy()) {
+            try {
+                double value = std::stod(instr.strArg);
+                return llvm::ConstantFP::get(llvmType, value);
+            } catch (const std::exception& e) {
+                fprintf(stderr, "      Failed to parse float constant '%s': %s\n", instr.strArg.c_str(), e.what());
+                return nullptr;
+            }
+        }
+
+        fprintf(stderr, "      Unsupported const type\n");
         return nullptr;
     }
 
@@ -454,9 +491,18 @@ namespace Rux {
         if (instr.srcs.empty()) return nullptr;
 
         llvm::Value* ptr = valueMap[instr.srcs[0]];
-        if (!ptr) return nullptr;
+        if (!ptr) {
+            fprintf(stderr, "      Failed to get pointer for load instruction (src reg: %u)\n", instr.srcs[0]);
+            return nullptr;
+        }
 
-        return builder->CreateLoad(typeMapper->MapType(instr.type), ptr, "load");
+        llvm::Type* loadType = typeMapper->MapType(instr.type);
+        if (!loadType) {
+            fprintf(stderr, "      Failed to map type for load instruction (kind=%d, name='%s')\n", (int)instr.type.kind, instr.type.name.c_str());
+            return nullptr;
+        }
+
+        return builder->CreateLoad(loadType, ptr, "load");
     }
 
     llvm::Value* LLVM::TranslateStore(const LirInstr& instr) {
@@ -471,11 +517,21 @@ namespace Rux {
     }
 
     llvm::Value* LLVM::TranslateBinaryOp(const LirInstr& instr) {
-        if (instr.srcs.size() < 2) return nullptr;
+        if (instr.srcs.size() < 2) {
+            fprintf(stderr, "      BinaryOp instruction has less than 2 sources\n");
+            return nullptr;
+        }
 
         llvm::Value* lhs = valueMap[instr.srcs[0]];
         llvm::Value* rhs = valueMap[instr.srcs[1]];
-        if (!lhs || !rhs) return nullptr;
+        if (!lhs) {
+            fprintf(stderr, "      BinaryOp instruction: lhs not found in valueMap (reg %u)\n", instr.srcs[0]);
+            return nullptr;
+        }
+        if (!rhs) {
+            fprintf(stderr, "      BinaryOp instruction: rhs not found in valueMap (reg %u)\n", instr.srcs[1]);
+            return nullptr;
+        }
 
         llvm::Type* type = lhs->getType();
 
@@ -485,6 +541,18 @@ namespace Rux {
                     return builder->CreateAdd(lhs, rhs, "add");
                 else if (type->isFloatingPointTy())
                     return builder->CreateFAdd(lhs, rhs, "fadd");
+                else if (type->isPointerTy()) {
+                    // Pointer arithmetic: ptr + int
+                    // With opaque pointers, we need to know the element type from the instruction
+                    llvm::Type* elemType = typeMapper->MapType(instr.type);
+                    if (rhs->getType()->isIntegerTy() && elemType)
+                        return builder->CreateGEP(elemType, lhs, rhs, "ptradd");
+                    else
+                        fprintf(stderr, "      BinaryOp Add: pointer arithmetic requires integer offset and valid element type\n");
+                }
+                else
+                    fprintf(stderr, "      BinaryOp Add: unsupported type (pointer=%d, integer=%d, float=%d)\n",
+                            type->isPointerTy(), type->isIntegerTy(), type->isFloatingPointTy());
                 break;
             case LirOpcode::Sub:
                 if (type->isIntegerTy())
@@ -509,6 +577,8 @@ namespace Rux {
                     return builder->CreateSRem(lhs, rhs, "srem");
                 else if (type->isFloatingPointTy())
                     return builder->CreateFRem(lhs, rhs, "frem");
+                else
+                    fprintf(stderr, "      BinaryOp Mod: unsupported type\n");
                 break;
             case LirOpcode::And:
                 return builder->CreateAnd(lhs, rhs, "and");
@@ -593,13 +663,22 @@ namespace Rux {
     }
 
     llvm::Value* LLVM::TranslateCast(const LirInstr& instr) {
-        if (instr.srcs.empty()) return nullptr;
+        if (instr.srcs.empty()) {
+            fprintf(stderr, "      Cast instruction has no sources\n");
+            return nullptr;
+        }
 
         llvm::Value* src = valueMap[instr.srcs[0]];
-        if (!src) return nullptr;
+        if (!src) {
+            fprintf(stderr, "      Cast instruction: source value not found in valueMap (reg %u)\n", instr.srcs[0]);
+            return nullptr;
+        }
 
         llvm::Type* dstType = typeMapper->MapType(instr.type);
-        if (!dstType) return nullptr;
+        if (!dstType) {
+            fprintf(stderr, "      Cast instruction: failed to map destination type (kind=%d, name='%s')\n", (int)instr.type.kind, instr.type.name.c_str());
+            return nullptr;
+        }
 
         llvm::Type* srcType = src->getType();
 
@@ -664,7 +743,8 @@ namespace Rux {
             return builder->CreateBitCast(src, dstType, "cast");
         }
 
-        fprintf(stderr, "error: unsupported cast\n");
+        fprintf(stderr, "error: unsupported cast from src bits=%d to dst bits=%d\n",
+                (int)srcType->getScalarSizeInBits(), (int)dstType->getScalarSizeInBits());
         return nullptr;
     }
 
@@ -747,10 +827,16 @@ namespace Rux {
     }
 
     llvm::Value* LLVM::TranslateFieldPtr(const LirInstr& instr) {
-        if (instr.srcs.empty()) return nullptr;
+        if (instr.srcs.empty()) {
+            fprintf(stderr, "      FieldPtr instruction has no sources\n");
+            return nullptr;
+        }
 
         llvm::Value* base = valueMap[instr.srcs[0]];
-        if (!base) return nullptr;
+        if (!base) {
+            fprintf(stderr, "      FieldPtr instruction: base value not found in valueMap (reg %u)\n", instr.srcs[0]);
+            return nullptr;
+        }
 
         // Parse field index from strArg
         // Handle both numeric indices and field names
@@ -765,22 +851,32 @@ namespace Rux {
             } else if (instr.strArg == "length") {
                 fieldIndex = 1;
             } else {
+                fprintf(stderr, "      FieldPtr instruction: unknown field name '%s'\n", instr.strArg.c_str());
                 return nullptr;
             }
         }
 
         llvm::Type* baseType = base->getType();
-        if (!baseType->isPointerTy()) return nullptr;
+        if (!baseType->isPointerTy()) {
+            // If base is not a pointer, this is likely a bug in LIR generation
+            // For now, skip this instruction to avoid segfault
+            fprintf(stderr, "      FieldPtr instruction: base is not a pointer, skipping (LIR bug?)\n");
+            return nullptr;
+        }
 
         // With opaque pointers, we need to know the element type
         // For now, use the instruction type to infer the struct type
         llvm::Type* elementType = typeMapper->MapType(instr.type);
-        if (!elementType) return nullptr;
+        if (!elementType) {
+            fprintf(stderr, "      FieldPtr instruction: failed to map element type (kind=%d, name='%s')\n", (int)instr.type.kind, instr.type.name.c_str());
+            return nullptr;
+        }
 
         llvm::StructType* structType = llvm::dyn_cast<llvm::StructType>(elementType);
         if (!structType) {
             // If the type is opaque, we can't use CreateStructGEP
             // Fall back to a simple GEP with index
+            fprintf(stderr, "      FieldPtr instruction: element type is not a struct, using GEP with index %u\n", fieldIndex);
             llvm::Value* idx = llvm::ConstantInt::get(llvm::Type::getInt32Ty(*context), fieldIndex);
             return builder->CreateGEP(elementType, base, idx, "fieldptr");
         }
@@ -829,11 +925,29 @@ namespace Rux {
     }
 
     llvm::Value* LLVM::TranslateGlobalAddr(const LirInstr& instr) {
-        // TODO: Look up global variable by name
+        // Look up global variable by name
         llvm::GlobalVariable* global = module->getGlobalVariable(instr.strArg);
-        if (!global) return nullptr;
+        if (!global) {
+            // Global not found in current module - create an external declaration
+            // This handles vtables and other globals defined in other modules
+            fprintf(stderr, "      Global '%s' not found in current module, creating external declaration\n", instr.strArg.c_str());
 
-        return builder->CreateLoad(global->getType(), global, "globaladdr");
+            // Create an external global variable declaration
+            // For vtables, we need an array of function pointers
+            // For now, create an opaque pointer type
+            llvm::PointerType* ptrType = llvm::PointerType::get(*context, 0);
+            global = new llvm::GlobalVariable(
+                *module,
+                ptrType,
+                false, // not constant
+                llvm::GlobalValue::ExternalLinkage,
+                nullptr, // no initializer (external)
+                instr.strArg
+            );
+        }
+
+        // Return the address of the global, not load from it
+        return global;
     }
 
     bool LLVM::TranslateTerminator(const LirTerminator& term, const std::unordered_map<std::uint32_t, llvm::BasicBlock*>& blockMap) {
@@ -969,6 +1083,16 @@ namespace Rux {
             blockMap[static_cast<std::uint32_t>(i)] = bb;
         }
 
+        // Map function parameters to LLVM arguments
+        size_t argIdx = 0;
+        for (auto& arg : llvmFunc->args()) {
+            if (argIdx < func.params.size()) {
+                valueMap[func.params[argIdx].reg] = &arg;
+                fprintf(stderr, "    Mapped param reg %u to LLVM arg\n", func.params[argIdx].reg);
+            }
+            argIdx++;
+        }
+
         // fprintf(stderr, "    Translating %zu blocks\n", func.blocks.size());
         // Translate each block
         for (size_t i = 0; i < func.blocks.size(); ++i) {
@@ -988,9 +1112,17 @@ namespace Rux {
     bool LLVM::TranslateBlock(const LirBlock& block, const std::unordered_map<std::uint32_t, llvm::BasicBlock*>& blockMap) {
         // Translate instructions
         for (const auto& instr : block.instrs) {
+            // fprintf(stderr, "      Translating instruction: opcode=%d, dst=%u, srcs=%zu, strArg='%s'\n", (int)instr.op, instr.dst, instr.srcs.size(), instr.strArg.c_str());
             llvm::Value* result = TranslateInstruction(instr);
-            if (instr.dst != LirNoReg) {
+            // Some instructions (Store, etc.) don't produce values but are still valid
+            // Only fail if the instruction has a destination but no result
+            if (instr.dst != LirNoReg && !result) {
+                fprintf(stderr, "      Failed to translate instruction with opcode %d (has dst but no result)\n", (int)instr.op);
+                return false;
+            }
+            if (instr.dst != LirNoReg && result) {
                 valueMap[instr.dst] = result;
+                // fprintf(stderr, "      Stored result in valueMap[%u]\n", instr.dst);
             }
         }
 
@@ -1097,6 +1229,7 @@ namespace Rux {
             if (!func) {
                 // Function not found - this might be an external function
                 // For now, skip this entry
+                fprintf(stderr, "      Vtable: function '%s' not found, skipping\n", methodName.c_str());
                 continue;
             }
 
@@ -1116,7 +1249,7 @@ namespace Rux {
                 *module,
                 vtableType,
                 true, // is constant (read-only)
-                llvm::GlobalValue::PrivateLinkage,
+                llvm::GlobalValue::ExternalLinkage, // Make it visible across modules
                 nullArray,
                 vtable.label
             );
@@ -1133,12 +1266,12 @@ namespace Rux {
         // Create constant array of function pointers
         llvm::Constant* vtableInit = llvm::ConstantArray::get(vtableType, methodPtrs);
 
-        // Create global variable in .rodata
+        // Create global variable in .rodata with external linkage for cross-module access
         new llvm::GlobalVariable(
             *module,
             vtableType,
             true, // is constant (read-only)
-            llvm::GlobalValue::PrivateLinkage,
+            llvm::GlobalValue::ExternalLinkage, // Make it visible across modules
             vtableInit,
             vtable.label
         );
